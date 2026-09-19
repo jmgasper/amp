@@ -1,0 +1,298 @@
+#include "SidebarView.h"
+#include "Theme.h"
+#include "player/Messages.h"
+#include <Font.h>
+#include <MenuItem.h>
+#include <Message.h>
+#include <PopUpMenu.h>
+#include <ScrollBar.h>
+#include <Window.h>
+
+namespace tasamp {
+
+namespace {
+const float kItemHeight = 20.0f;
+const float kHeaderHeight = 22.0f;
+}
+
+SidebarView::SidebarView()
+    : BView("sidebar", B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE)
+{
+    SetViewColor(B_TRANSPARENT_COLOR);
+    SetExplicitMinSize(BSize(150, 100));
+    Rebuild();
+}
+
+void SidebarView::SetPlaylists(const std::vector<SidebarPlaylist>& playlists)
+{
+    fPlaylists = playlists;
+    Rebuild();
+    Invalidate();
+}
+
+void SidebarView::Select(const char* source, int64_t playlistId)
+{
+    fSelectedSource = source;
+    fSelectedPlaylist = playlistId;
+    Invalidate();
+}
+
+void SidebarView::Rebuild()
+{
+    fItems.clear();
+    float y = 6;
+    auto add = [&](const char* source, const char* label, bool header, int64_t playlistId = 0, bool isMA = false, bool synced = false) {
+        Item item;
+        item.source = source;
+        item.label = label;
+        item.header = header;
+        item.playlistId = playlistId;
+        item.isMA = isMA;
+        item.synced = synced;
+        float h = header ? kHeaderHeight : kItemHeight;
+        item.rect = BRect(0, y, Bounds().Width(), y + h - 1);
+        y += h;
+        fItems.push_back(item);
+    };
+    add("", "LIBRARY", true);
+    add("music", "Music", false);
+    add("artists", "Artists", false);
+    add("albums", "Albums", false);
+    add("ma", "Music Assistant", false, 0, true);
+    y += 8;
+    add("", "PLAYLISTS", true);
+    for (const SidebarPlaylist& p : fPlaylists)
+        add("playlist", p.name.String(), false, p.id, p.isMA, p.synced);
+    fContentHeight = y + 10;
+    UpdateScrollBar();
+}
+
+void SidebarView::UpdateScrollBar()
+{
+    if (BScrollBar* bar = ScrollBar(B_VERTICAL)) {
+        float visible = Bounds().Height();
+        float max = std::max(0.0f, fContentHeight - visible);
+        bar->SetRange(0, max);
+        bar->SetProportion(fContentHeight > 0 ? visible / fContentHeight : 1);
+        bar->SetSteps(kItemHeight, visible);
+    }
+}
+
+void SidebarView::FrameResized(float width, float height)
+{
+    for (Item& item : fItems)
+        item.rect.right = width;
+    UpdateScrollBar();
+    Invalidate();
+}
+
+void SidebarView::AttachedToWindow()
+{
+    BView::AttachedToWindow();
+    UpdateScrollBar();
+}
+
+int SidebarView::ItemAt(BPoint where) const
+{
+    for (size_t i = 0; i < fItems.size(); i++)
+        if (!fItems[i].header && fItems[i].rect.Contains(where))
+            return (int)i;
+    return -1;
+}
+
+void SidebarView::DrawIcon(const Item& item, BRect rect, bool selected)
+{
+    rgb_color color = selected ? Rgb(255, 255, 255) : Rgb(70, 90, 120);
+    rgb_color fill = selected ? Rgb(230, 236, 250) : Rgb(120, 140, 175);
+    float cx = (rect.left + rect.right) / 2;
+    float cy = (rect.top + rect.bottom) / 2;
+    SetHighColor(color);
+    if (item.source == "music") {
+        DrawNoteIcon(this, rect.InsetByCopy(1, 1), color);
+    } else if (item.source == "artists") {
+        FillEllipse(BRect(cx - 3, rect.top + 1, cx + 3, rect.top + 7));
+        FillArc(BRect(cx - 7, rect.top + 7, cx + 7, rect.bottom + 6), 0, 180);
+    } else if (item.source == "albums") {
+        SetHighColor(fill);
+        FillRect(rect.InsetByCopy(1, 1));
+        SetHighColor(color);
+        StrokeRect(rect.InsetByCopy(1, 1));
+        FillEllipse(BRect(cx - 2, cy - 2, cx + 2, cy + 2));
+    } else if (item.source == "ma") {
+        BRect badge = rect.InsetByCopy(0, 2);
+        SetHighColor(selected ? Rgb(255, 255, 255) : theme::kBadgeBackground);
+        FillRoundRect(badge, 3, 3);
+        BFont font(be_bold_font);
+        font.SetSize(7.5f);
+        SetFont(&font);
+        font_height fh;
+        font.GetHeight(&fh);
+        float width = StringWidth("MA");
+        SetHighColor(selected ? theme::kBadgeBackground : Rgb(255, 255, 255));
+        SetDrawingMode(B_OP_OVER);
+        DrawString("MA", BPoint(badge.left + (badge.Width() - width) / 2 + 0.5f,
+            badge.top + (badge.Height() - (fh.ascent + fh.descent)) / 2 + fh.ascent));
+    } else {
+        // playlist: a small list glyph
+        SetHighColor(fill);
+        FillRoundRect(rect.InsetByCopy(1, 1), 2, 2);
+        SetHighColor(color);
+        StrokeRoundRect(rect.InsetByCopy(1, 1), 2, 2);
+        for (int i = 0; i < 3; i++)
+            StrokeLine(BPoint(rect.left + 4, rect.top + 5 + i * 3), BPoint(rect.right - 4, rect.top + 5 + i * 3));
+    }
+}
+
+void SidebarView::Draw(BRect updateRect)
+{
+    BRect bounds = Bounds();
+    SetHighColor(theme::kSidebarBackground);
+    FillRect(bounds);
+    SetHighColor(theme::kSidebarBorder);
+    StrokeLine(BPoint(bounds.right, bounds.top), BPoint(bounds.right, bounds.bottom));
+    bool active = Window() && Window()->IsActive();
+    BFont header(be_bold_font);
+    header.SetSize(10);
+    BFont plain(be_plain_font);
+    plain.SetSize(12);
+    BFont bold(be_bold_font);
+    bold.SetSize(12);
+    for (size_t i = 0; i < fItems.size(); i++) {
+        const Item& item = fItems[i];
+        BRect rect = item.rect;
+        rect.right = bounds.right - 1;
+        if (!rect.Intersects(updateRect))
+            continue;
+        if (item.header) {
+            SetFont(&header);
+            SetHighColor(theme::kSidebarHeader);
+            DrawTruncated(this, item.label.String(), BRect(rect.left + 8, rect.top + 2, rect.right, rect.bottom), B_ALIGN_LEFT, 0);
+            continue;
+        }
+        bool selected = item.source == fSelectedSource && (item.source != "playlist" || item.playlistId == fSelectedPlaylist);
+        if (selected) {
+            if (active)
+                FillVerticalGradient(this, rect, theme::kSidebarSelectionTop, theme::kSidebarSelectionBottom);
+            else
+                FillVerticalGradient(this, rect, theme::kSidebarSelectionInactiveTop, theme::kSidebarSelectionInactiveBottom);
+        } else if ((int)i == fDropIndex) {
+            SetHighColor(255, 255, 255, 140);
+            SetDrawingMode(B_OP_ALPHA);
+            FillRect(rect);
+            SetDrawingMode(B_OP_COPY);
+            SetHighColor(theme::kSidebarSelectionBottom);
+            StrokeRect(rect);
+        }
+        BRect icon(rect.left + 12, rect.top + 3, rect.left + 26, rect.bottom - 3);
+        DrawIcon(item, icon, selected);
+        SetFont(selected ? &bold : &plain);
+        SetHighColor(selected ? theme::kSelectedText : theme::kSidebarText);
+        float right = rect.right - 4;
+        if (item.source == "playlist" && (item.isMA || item.synced)) {
+            float badgeWidth = 24;
+            DrawMABadge(this, BPoint(rect.right - badgeWidth - 4, rect.top + 4), 11);
+            right = rect.right - badgeWidth - 8;
+            if (item.synced && !item.isMA) {
+                // a small sync arrow next to the badge marks a local playlist mirrored to MA
+                SetHighColor(selected ? theme::kSelectedText : theme::kSidebarHeader);
+                StrokeArc(BPoint(rect.right - badgeWidth - 12, rect.top + 10), 4, 4, 40, 280);
+                right -= 10;
+            }
+        }
+        SetHighColor(selected ? theme::kSelectedText : theme::kSidebarText);
+        DrawTruncated(this, item.label.String(), BRect(rect.left + 32, rect.top, right, rect.bottom), B_ALIGN_LEFT, 0);
+    }
+}
+
+void SidebarView::MouseDown(BPoint where)
+{
+    MakeFocus(true);
+    int index = ItemAt(where);
+    if (index < 0)
+        return;
+    const Item& item = fItems[index];
+    int32 buttons = 0;
+    Window()->CurrentMessage()->FindInt32("buttons", &buttons);
+    if (buttons & B_SECONDARY_MOUSE_BUTTON) {
+        ShowContextMenu(index, where);
+        return;
+    }
+    fSelectedSource = item.source;
+    fSelectedPlaylist = item.playlistId;
+    Invalidate();
+    BMessage message(kMsgSourceSelected);
+    message.AddString("source", item.source.String());
+    message.AddInt64("playlist", item.playlistId);
+    Window()->PostMessage(&message);
+}
+
+void SidebarView::MouseMoved(BPoint where, uint32 transit, const BMessage* drag)
+{
+    int previous = fDropIndex;
+    fDropIndex = -1;
+    if (drag && drag->what == kMsgTrackDrag && (transit == B_INSIDE_VIEW || transit == B_ENTERED_VIEW)) {
+        int index = ItemAt(where);
+        if (index >= 0 && fItems[index].source == "playlist" && !fItems[index].isMA)
+            fDropIndex = index;
+    }
+    if (previous != fDropIndex)
+        Invalidate();
+}
+
+void SidebarView::MouseUp(BPoint where)
+{
+}
+
+void SidebarView::MessageReceived(BMessage* message)
+{
+    if (message->WasDropped() && message->what == kMsgTrackDrag) {
+        BPoint where = ConvertFromScreen(message->DropPoint());
+        int index = ItemAt(where);
+        fDropIndex = -1;
+        Invalidate();
+        if (index >= 0 && fItems[index].source == "playlist" && !fItems[index].isMA) {
+            BMessage add(kMsgAddToPlaylist);
+            add.AddInt64("playlist", fItems[index].playlistId);
+            int64 id;
+            for (int32 i = 0; message->FindInt64("tracks", i, &id) == B_OK; i++)
+                add.AddInt64("tracks", id);
+            Window()->PostMessage(&add);
+        }
+        return;
+    }
+    BView::MessageReceived(message);
+}
+
+void SidebarView::ShowContextMenu(int index, BPoint where)
+{
+    const Item& item = fItems[index];
+    BPopUpMenu* menu = new BPopUpMenu("sidebar-menu", false, false);
+    menu->AddItem(new BMenuItem("New Playlist…", new BMessage(kMsgNewPlaylist)));
+    if (item.source == "playlist") {
+        menu->AddSeparatorItem();
+        BMessage* play = new BMessage(kMsgSourceSelected);
+        play->AddString("source", "playlist");
+        play->AddInt64("playlist", item.playlistId);
+        play->AddBool("play", true);
+        menu->AddItem(new BMenuItem("Play", play));
+        if (!item.isMA) {
+            BMessage* rename = new BMessage(kMsgRenamePlaylist);
+            rename->AddInt64("playlist", item.playlistId);
+            menu->AddItem(new BMenuItem("Rename…", rename));
+            BMessage* sync = new BMessage(kMsgSyncPlaylistToMA);
+            sync->AddInt64("playlist", item.playlistId);
+            sync->AddBool("enable", !item.synced);
+            BMenuItem* syncItem = new BMenuItem(item.synced ? "Stop Syncing to Music Assistant" : "Sync to Music Assistant", sync);
+            syncItem->SetMarked(item.synced);
+            menu->AddItem(syncItem);
+        }
+        BMessage* remove = new BMessage(kMsgDeletePlaylist);
+        remove->AddInt64("playlist", item.playlistId);
+        menu->AddItem(new BMenuItem(item.isMA ? "Delete from Music Assistant" : "Delete Playlist", remove));
+    }
+    menu->SetTargetForItems(Window());
+    menu->SetAsyncAutoDestruct(true);
+    menu->Go(ConvertToScreen(where), true, true, true);
+}
+
+} // namespace tasamp

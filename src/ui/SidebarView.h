@@ -1,0 +1,57 @@
+// Left source list: LIBRARY (Music, Artists, Albums, Music Assistant) and PLAYLISTS.
+#pragma once
+#include <String.h>
+#include <View.h>
+#include <vector>
+
+namespace tasamp {
+
+struct SidebarPlaylist {
+    int64_t id;
+    BString name;
+    bool isMA;
+    bool synced;
+};
+
+class SidebarView : public BView {
+public:
+    SidebarView();
+    void SetPlaylists(const std::vector<SidebarPlaylist>& playlists);
+    void Select(const char* source, int64_t playlistId);
+    const char* SelectedSource() const { return fSelectedSource.String(); }
+    int64_t SelectedPlaylist() const { return fSelectedPlaylist; }
+
+    void Draw(BRect updateRect) override;
+    void MouseDown(BPoint where) override;
+    void MouseMoved(BPoint where, uint32 transit, const BMessage* drag) override;
+    void MouseUp(BPoint where) override;
+    void MessageReceived(BMessage* message) override;
+    void FrameResized(float width, float height) override;
+    void AttachedToWindow() override;
+    void WindowActivated(bool active) override { Invalidate(); }
+
+private:
+    struct Item {
+        BString source;      // "music", "artists", "albums", "ma", "playlist" or "" for headers
+        BString label;
+        int64_t playlistId = 0;
+        bool header = false;
+        bool isMA = false;
+        bool synced = false;
+        BRect rect;
+    };
+    void Rebuild();
+    void UpdateScrollBar();
+    int ItemAt(BPoint where) const;
+    void DrawIcon(const Item& item, BRect rect, bool selected);
+    void ShowContextMenu(int index, BPoint where);
+
+    std::vector<SidebarPlaylist> fPlaylists;
+    std::vector<Item> fItems;
+    BString fSelectedSource = "music";
+    int64_t fSelectedPlaylist = 0;
+    int fDropIndex = -1;
+    float fContentHeight = 0;
+};
+
+} // namespace tasamp

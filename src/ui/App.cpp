@@ -1,0 +1,410 @@
+#include "App.h"
+#include "MainWindow.h"
+#include "core/Http.h"
+#include "player/Messages.h"
+#include <Alert.h>
+#include <MediaFile.h>
+#include <MediaTrack.h>
+#include <Directory.h>
+#include <Entry.h>
+#include <FindDirectory.h>
+#include <Path.h>
+#include <Roster.h>
+#include <cstdio>
+#include <thread>
+
+namespace tasamp {
+
+namespace {
+const char* kSignature = "application/x-vnd.TasAmp";
+const int kScannerVersion = 2; // 2: lossless flag and estimated bit rates
+}
+
+TasAmpApp* TasAmpApp::Instance()
+{
+    return static_cast<TasAmpApp*>(be_app);
+}
+
+TasAmpApp::TasAmpApp()
+    : BApplication(kSignature)
+{
+    BPath path;
+    find_directory(B_USER_SETTINGS_DIRECTORY, &path, true);
+    path.Append("TasAmp");
+    create_directory(path.Path(), 0755);
+    fSettingsDir = path.Path();
+    BPath cache;
+    find_directory(B_USER_CACHE_DIRECTORY, &cache, true);
+    cache.Append("TasAmp");
+    create_directory(cache.Path(), 0755);
+    cache.Append("art");
+    create_directory(cache.Path(), 0755);
+    fCacheDir = cache.Path();
+
+    Http::GlobalInit();
+    fSettings.reset(new Settings(fSettingsDir + "/settings.json"));
+    fSettings->Load();
+    SettingsData data = fSettings->Get();
+    if (data.maPlayerId.empty()) {
+        data.maPlayerId = GenerateClientId();
+        fSettings->Update(data);
+    }
+    fLibrary.reset(new Library(fSettingsDir + "/library.db"));
+    std::string error;
+    if (!fLibrary->Open(error))
+        fprintf(stderr, "TasAmp: cannot open library: %s\n", error.c_str());
+    fImages.reset(new ImageCache(fCacheDir, *fSettings));
+    fImages->Open();
+    fMA.reset(new MusicAssistant());
+    fMA->Configure(data.maHost, data.maPort, data.maUsername, data.maPassword, data.maToken);
+    fArt.reset(new ArtStore(*fImages, *fMA));
+    fPlayer.reset(new Player(*fLibrary, *fMA));
+    fPlayer->SetVolume(data.volume);
+    fPlayer->SetShuffle(data.shuffle);
+    fPlayer->SetRepeat((RepeatMode)data.repeat);
+    fScanner.reset(new Scanner(*fLibrary, *fImages));
+    fScanner->onProgress = [this](const std::string& text, bool done) {
+        BMessage message(kMsgScanProgress);
+        message.AddString("text", text.c_str());
+        message.AddBool("done", done);
+        if (fWindow)
+            BMessenger(fWindow).SendMessage(&message);
+    };
+    fScanner->durationProbe = [](const std::string& path) -> int64_t {
+        entry_ref ref;
+        if (get_ref_for_path(path.c_str(), &ref) != B_OK)
+            return 0;
+        BMediaFile file(&ref);
+        if (file.InitCheck() != B_OK)
+            return 0;
+        for (int32 i = 0; i < file.CountTracks(); i++) {
+            BMediaTrack* track = file.TrackAt(i);
+            if (!track)
+                continue;
+            media_format format;
+            bigtime_t duration = 0;
+            if (track->EncodedFormat(&format) == B_OK && format.IsAudio())
+                duration = track->Duration();
+            file.ReleaseTrack(track);
+            if (duration > 0)
+                return duration / 1000;
+        }
+        return 0;
+    };
+    fLibrary->onChanged = [this] {
+        if (fWindow)
+            BMessenger(fWindow).SendMessage(kMsgLibraryChanged);
+    };
+}
+
+TasAmpApp::~TasAmpApp()
+{
+}
+
+void TasAmpApp::ReadyToRun()
+{
+    SettingsData data = fSettings->Get();
+    BRect frame(data.windowX, data.windowY, data.windowX + data.windowW, data.windowY + data.windowH);
+    fWindow = new MainWindow(frame);
+    BMessenger target(fWindow);
+    fArt->SetTarget(target);
+    fPlayer->SetTarget(target);
+    fPlayer->SetControl(BMessenger(this));
+    fWindow->Show();
+    fImages->Start();
+    fArt->Start();
+    fPlayer->Start();
+    if (!data.libraryFolders.empty())
+        StartScan();
+    if (data.maEnabled && !data.maHost.empty())
+        ConnectMusicAssistant(true);
+}
+
+bool TasAmpApp::QuitRequested()
+{
+    fScanner->Stop();
+    fPlayer->Shutdown();
+    fArt->Stop();
+    fImages->Stop();
+    fSettings->Save();
+    return BApplication::QuitRequested();
+}
+
+void TasAmpApp::MessageReceived(BMessage* message)
+{
+    switch (message->what) {
+        case kMsgSettingsChanged:
+            ApplySettingsChanged();
+            break;
+        case kMsgRescan:
+            StartScan();
+            break;
+        case kMsgMAResync:
+            ConnectMusicAssistant(true);
+            break;
+        case kMsgTrackFinished: {
+            int32 generation = 0;
+            message->FindInt32("generation", &generation);
+            fPlayer->HandleTrackFinished(generation);
+            break;
+        }
+        default:
+            BApplication::MessageReceived(message);
+    }
+}
+
+void TasAmpApp::RefsReceived(BMessage* message)
+{
+    // Files dropped on the app or opened from Tracker: play them directly.
+    std::vector<Track> tracks;
+    entry_ref ref;
+    for (int32 i = 0; message->FindRef("refs", i, &ref) == B_OK; i++) {
+        BPath path(&ref);
+        Track track;
+        if (Scanner::ReadTrack(path.Path(), track, nullptr, nullptr))
+            tracks.push_back(track);
+    }
+    if (tracks.empty())
+        return;
+    std::vector<int64_t> ids = fLibrary->UpsertTracks(tracks, true);
+    fPlayer->PlayTracks(ids, 0);
+}
+
+void TasAmpApp::ArgvReceived(int32 argc, char** argv)
+{
+    BMessage refs(B_REFS_RECEIVED);
+    for (int32 i = 1; i < argc; i++) {
+        entry_ref ref;
+        if (get_ref_for_path(argv[i], &ref) == B_OK)
+            refs.AddRef("refs", &ref);
+    }
+    if (refs.HasRef("refs"))
+        RefsReceived(&refs);
+}
+
+void TasAmpApp::StartScan()
+{
+    SettingsData data = fSettings->Get();
+    if (data.libraryFolders.empty()) {
+        fScanner->onProgress("No library folders configured", true);
+        return;
+    }
+    // a newer scanner reads fields older versions did not store: read every file once more
+    bool force = data.scannerVersion < kScannerVersion;
+    if (force)
+        fSettings->Modify([](SettingsData& d) { d.scannerVersion = kScannerVersion; });
+    fScanner->Start(data.libraryFolders, force);
+}
+
+void TasAmpApp::ApplySettingsChanged()
+{
+    SettingsData data = fSettings->Get();
+    fMA->Configure(data.maHost, data.maPort, data.maUsername, data.maPassword, data.maToken);
+    if (data.maEnabled && !data.maHost.empty())
+        ConnectMusicAssistant(true);
+    else
+        DisconnectMusicAssistant();
+    StartScan();
+    if (fWindow)
+        BMessenger(fWindow).SendMessage(kMsgLibraryChanged);
+}
+
+void TasAmpApp::ConnectMusicAssistant(bool resync)
+{
+    if (fMASyncRunning)
+        return;
+    fMASyncRunning = true;
+    std::thread([this, resync] { MAConnectWorker(resync); }).detach();
+}
+
+void TasAmpApp::MAConnectWorker(bool resync)
+{
+    auto status = [this](bool connected, const std::string& text) {
+        BMessage message(kMsgMAStatus);
+        message.AddBool("connected", connected);
+        message.AddString("message", text.c_str());
+        if (fWindow)
+            BMessenger(fWindow).SendMessage(&message);
+    };
+    status(false, "Connecting to Music Assistant…");
+    std::string error;
+    if (!fMA->EnsureAuthenticated(error)) {
+        status(false, "Music Assistant login failed: " + error);
+        fMASyncRunning = false;
+        return;
+    }
+    SettingsData data = fSettings->Get();
+    if (data.maToken != fMA->Token()) {
+        data.maToken = fMA->Token();
+        fSettings->Update(data);
+    }
+    fPlayer->EnableMusicAssistant(fMA->Host(), fMA->Port(), fMA->Token(), data.maPlayerId, data.maPlayerName);
+    fMAConnected = true;
+    if (resync) {
+        MASyncResult result;
+        bool ok = fMA->FetchLibrary(result, [&](const std::string& text) { status(true, "Music Assistant: " + text); });
+        if (ok) {
+            fLibrary->ApplyMASync(result);
+            status(true, "Music Assistant library synced: " + std::to_string(result.tracks.size()) + " tracks");
+        } else
+            status(true, "Music Assistant sync failed: " + result.error);
+        BMessage done(kMsgMASyncDone);
+        done.AddString("error", ok ? "" : result.error.c_str());
+        if (fWindow)
+            BMessenger(fWindow).SendMessage(&done);
+    }
+    fMASyncRunning = false;
+}
+
+void TasAmpApp::DisconnectMusicAssistant()
+{
+    fPlayer->DisableMusicAssistant();
+    fMAConnected = false;
+    BMessage message(kMsgMAStatus);
+    message.AddBool("connected", false);
+    message.AddString("message", "Music Assistant disabled");
+    if (fWindow)
+        BMessenger(fWindow).SendMessage(&message);
+}
+
+void TasAmpApp::SyncPlaylistToMA(int64_t playlistId)
+{
+    {
+        std::lock_guard<std::mutex> lock(fMutex);
+        fPlaylistSyncQueue.insert(playlistId);
+        if (fPlaylistSyncRunning)
+            return;
+        fPlaylistSyncRunning = true;
+    }
+    std::thread([this] {
+        while (true) {
+            int64_t id;
+            {
+                std::lock_guard<std::mutex> lock(fMutex);
+                if (fPlaylistSyncQueue.empty()) {
+                    fPlaylistSyncRunning = false;
+                    return;
+                }
+                id = *fPlaylistSyncQueue.begin();
+                fPlaylistSyncQueue.erase(fPlaylistSyncQueue.begin());
+            }
+            PlaylistSyncWorker(id);
+        }
+    }).detach();
+}
+
+bool TasAmpApp::LoadMAPlaylist(int64_t playlistId)
+{
+    std::string itemId, name;
+    {
+        Library::Locker locker(*fLibrary);
+        const Playlist* playlist = fLibrary->PlaylistById(playlistId);
+        if (!playlist || !playlist->isMA() || playlist->maItemId.empty())
+            return false;
+        itemId = playlist->maItemId;
+        name = playlist->name;
+    }
+    {
+        std::lock_guard<std::mutex> lock(fMutex);
+        if (!fPlaylistLoads.insert(playlistId).second)
+            return true; // already loading
+    }
+    std::thread([this, playlistId, itemId, name] {
+        auto status = [this](const std::string& text) {
+            BMessage message(kMsgScanProgress);
+            message.AddString("text", text.c_str());
+            message.AddBool("done", true);
+            if (fWindow)
+                BMessenger(fWindow).SendMessage(&message);
+        };
+        status("Loading playlist \"" + name + "\" from Music Assistant…");
+        std::vector<Track> tracks;
+        std::string error;
+        if (fMA->EnsureAuthenticated(error) && fMA->FetchLibraryPlaylistTracks(itemId, tracks, error)) {
+            std::vector<int64_t> ids = fLibrary->UpsertTracks(tracks, false);
+            bool changed;
+            {
+                Library::Locker locker(*fLibrary);
+                const Playlist* playlist = fLibrary->PlaylistById(playlistId);
+                changed = !playlist || playlist->trackIds != ids;
+            }
+            if (changed) {
+                fLibrary->SetPlaylistTracks(playlistId, ids);
+                fLibrary->RebuildIndex();
+            }
+            status("Playlist \"" + name + "\": " + std::to_string(ids.size()) + " tracks");
+        } else
+            status("Cannot load playlist \"" + name + "\": " + error);
+        {
+            std::lock_guard<std::mutex> lock(fMutex);
+            fPlaylistLoads.erase(playlistId);
+        }
+        BMessage finished(kMsgPlaylistLoading);
+        finished.AddInt64("playlist", playlistId);
+        finished.AddBool("loading", false);
+        if (fWindow)
+            BMessenger(fWindow).SendMessage(&finished);
+    }).detach();
+    return true;
+}
+
+void TasAmpApp::PlaylistSyncWorker(int64_t playlistId)
+{
+    auto status = [this](const std::string& text) {
+        BMessage message(kMsgScanProgress);
+        message.AddString("text", text.c_str());
+        message.AddBool("done", true);
+        if (fWindow)
+            BMessenger(fWindow).SendMessage(&message);
+    };
+    std::string name, maItemId;
+    std::vector<std::string> uris;
+    int skipped = 0;
+    {
+        Library::Locker locker(*fLibrary);
+        const Playlist* playlist = fLibrary->PlaylistById(playlistId);
+        if (!playlist || !playlist->syncToMA)
+            return;
+        name = playlist->name;
+        maItemId = playlist->maItemId;
+        for (int64_t trackId : playlist->trackIds) {
+            const Track* track = fLibrary->TrackById(trackId);
+            if (track && track->isMA())
+                uris.push_back(track->uri);
+            else
+                skipped++;
+        }
+    }
+    std::string error;
+    if (!fMA->EnsureAuthenticated(error)) {
+        status("Playlist sync failed: " + error);
+        return;
+    }
+    if (maItemId.empty()) {
+        Playlist created;
+        if (!fMA->CreatePlaylist(name, created, error)) {
+            status("Cannot create playlist on Music Assistant: " + error);
+            return;
+        }
+        maItemId = created.maItemId;
+        fLibrary->LinkPlaylistToMA(playlistId, created.maItemId, created.maUri, true);
+    }
+    // Replace the server-side content: remove everything, then add in order.
+    std::vector<Track> current;
+    if (fMA->FetchLibraryPlaylistTracks(maItemId, current, error) && !current.empty()) {
+        std::vector<int> positions;
+        for (int i = 0; i < (int)current.size(); i++)
+            positions.push_back(i);
+        fMA->RemovePlaylistTracks(maItemId, positions, error);
+        snooze(500000); // the removal runs as a background task on the server
+    }
+    error.clear();
+    if (!fMA->AddPlaylistTracks(maItemId, uris, error)) {
+        status("Playlist sync failed: " + error);
+        return;
+    }
+    status("Playlist \"" + name + "\" synced to Music Assistant (" + std::to_string(uris.size()) + " tracks"
+        + (skipped ? ", " + std::to_string(skipped) + " local tracks skipped)" : ")"));
+}
+
+} // namespace tasamp

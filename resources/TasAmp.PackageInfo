@@ -1,0 +1,23 @@
+name tasamp
+version 0.1.6~alpha-1
+architecture x86_64
+summary "Music player for local libraries and Music Assistant, styled after iTunes 8"
+description "TasAmp plays MP3, MP4/AAC, FLAC, WAV and OGG files from local folders and streams tracks from a Music Assistant server, registering itself as a Sendspin player. It reads tags with TagLib, caches album and artist artwork from embedded pictures, folder art, MusicBrainz/Cover Art Archive, TheAudioDB and Discogs, and offers album, artist and playlist browsing with playlists that can be mirrored to Music Assistant."
+packager "TasAmp contributors"
+vendor "TasAmp"
+urls { "https://github.com/jmgasper/tasamp" }
+copyrights { "2026 TasAmp contributors" "2013-2025 Niels Lohmann" }
+licenses { "MIT" }
+provides {
+    tasamp = 0.1.6~alpha
+    app:TasAmp = 0.1.6~alpha
+}
+requires {
+    haiku >= r1~beta6
+    lib:libcurl
+    lib:libsqlite3
+    lib:libtag >= 2
+}
+post-install-scripts {
+    "boot/post-install/tasamp.sh"
+}

@@ -1,0 +1,27 @@
+resource app_signature "application/x-vnd.TasAmp";
+resource app_flags B_SINGLE_LAUNCH;
+resource vector_icon {
+    import "branding/tasamp-icon.hvif"
+};
+resource app_version {
+    major = 0,
+    middle = 1,
+    minor = 6,
+    variety = B_APPV_ALPHA,
+    internal = 0,
+    short_info = "TasAmp 0.1.6 alpha — music player",
+    long_info = "A native Haiku music player for local libraries and Music Assistant, styled after iTunes 8."
+};
+resource file_types message {
+    "types" = "audio/mpeg",
+    "types" = "audio/x-mpeg",
+    "types" = "audio/mp4",
+    "types" = "audio/x-m4a",
+    "types" = "audio/aac",
+    "types" = "audio/x-flac",
+    "types" = "audio/flac",
+    "types" = "audio/x-wav",
+    "types" = "audio/wav",
+    "types" = "audio/ogg",
+    "types" = "audio/x-vorbis+ogg"
+};
