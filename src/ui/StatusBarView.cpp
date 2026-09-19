@@ -3,11 +3,18 @@
 #include "player/Messages.h"
 #include <Font.h>
 #include <Window.h>
+#include <cmath>
 
 namespace tasamp {
 
 namespace {
 const uint32 kMsgExpire = 'stex';
+
+// The Settings button is the right-most element of the bar; the MA indicator sits to its left.
+const float kSettingsButtonWidth = 78.0f;
+const float kStatusBarInset = 8.0f;
+const float kIndicatorWidth = 200.0f;
+const float kTwoPi = 6.283185307179586f; // gear teeth: eight steps around the circle
 }
 
 StatusBarView::StatusBarView()
@@ -78,6 +85,13 @@ BRect StatusBarView::ButtonRect(int index) const
     return BRect(left, 3, left + 30, theme::kStatusBarHeight - 4);
 }
 
+BRect StatusBarView::SettingsRect() const
+{
+    BRect bounds = Bounds();
+    float right = bounds.right - kStatusBarInset;
+    return BRect(right - kSettingsButtonWidth, 3, right, theme::kStatusBarHeight - 4);
+}
+
 void StatusBarView::Draw(BRect updateRect)
 {
     BRect bounds = Bounds();
@@ -128,14 +142,57 @@ void StatusBarView::Draw(BRect updateRect)
     SetFont(&font);
     SetHighColor(theme::kToolbarText);
     BString center = fTransient.IsEmpty() ? fSummary : fTransient;
-    DrawTruncated(this, center.String(), BRect(120, 0, bounds.right - 220, bounds.bottom), B_ALIGN_CENTER, 0);
-    // Music Assistant indicator on the right
-    BRect indicator(bounds.right - 210, 0, bounds.right - 8, bounds.bottom);
+    // the indicator and the Settings button own the right-hand end: keep the summary clear of them
+    BRect settings = SettingsRect();
+    float indicatorRight = settings.left - 12;
+    float indicatorLeft = indicatorRight - kIndicatorWidth;
+    float centerRight = indicatorLeft - 12;
+    if (centerRight < 120)
+        centerRight = 120;
+    DrawTruncated(this, center.String(), BRect(120, 0, centerRight, bounds.bottom), B_ALIGN_CENTER, 0);
+    // Music Assistant indicator left of the Settings button
+    BRect indicator(indicatorLeft, 0, indicatorRight, bounds.bottom);
     SetHighColor(fMAConnected ? Rgb(60, 170, 80) : Rgb(150, 150, 150));
     FillEllipse(BRect(indicator.left, 8, indicator.left + 8, 16));
     SetHighColor(theme::kToolbarText);
     BString text = fMAText.IsEmpty() ? BString(fMAConnected ? "Music Assistant connected" : "Music Assistant off") : fMAText;
     DrawTruncated(this, text.String(), BRect(indicator.left + 12, 0, indicator.right, bounds.bottom), B_ALIGN_LEFT, 0);
+    DrawSettingsButton();
+}
+
+void StatusBarView::DrawSettingsButton()
+{
+    BRect r = SettingsRect();
+    bool pressed = fPressed == kSettings;
+    if (pressed)
+        FillRoundGradient(this, r, 4, Rgb(140, 140, 140), Rgb(170, 170, 170));
+    else
+        FillRoundGradient(this, r, 4, Rgb(250, 250, 250), Rgb(205, 205, 205));
+    SetHighColor(120, 120, 120);
+    StrokeRoundRect(r, 4, 4);
+
+    // a small gear: eight teeth around a filled hub with a centre punched out in the button colour
+    float cy = (r.top + r.bottom) / 2;
+    float cx = r.left + 13;
+    SetHighColor(pressed ? Rgb(255, 255, 255) : Rgb(70, 70, 70));
+    SetPenSize(2);
+    for (int i = 0; i < 8; i++) {
+        float angle = i * kTwoPi / 8.0f;
+        float dx = cosf(angle);
+        float dy = sinf(angle);
+        StrokeLine(BPoint(cx + dx * 2.8f, cy + dy * 2.8f), BPoint(cx + dx * 5.4f, cy + dy * 5.4f));
+    }
+    SetPenSize(1);
+    FillEllipse(BRect(cx - 3.2f, cy - 3.2f, cx + 3.2f, cy + 3.2f));
+    SetHighColor(pressed ? Rgb(155, 155, 155) : Rgb(228, 228, 228));
+    FillEllipse(BRect(cx - 1.3f, cy - 1.3f, cx + 1.3f, cy + 1.3f));
+
+    BFont font(be_plain_font);
+    font.SetSize(11);
+    SetFont(&font);
+    SetHighColor(pressed ? Rgb(255, 255, 255) : theme::kToolbarText);
+    DrawTruncated(this, "Settings", BRect(cx + 8, r.top, r.right - 6, r.bottom), B_ALIGN_LEFT, 0);
+    SetDrawingMode(B_OP_COPY);
 }
 
 StatusBarView::Hot StatusBarView::HitTest(BPoint where) const
@@ -143,6 +200,8 @@ StatusBarView::Hot StatusBarView::HitTest(BPoint where) const
     for (int i = 0; i < 3; i++)
         if (ButtonRect(i).Contains(where))
             return (Hot)(i + 1);
+    if (SettingsRect().Contains(where))
+        return kSettings;
     return kNone;
 }
 
@@ -163,8 +222,10 @@ void StatusBarView::MouseUp(BPoint where)
             Window()->PostMessage(kMsgNewPlaylist);
         else if (fPressed == kShuffle)
             Window()->PostMessage(kMsgToggleShuffle);
-        else
+        else if (fPressed == kRepeat)
             Window()->PostMessage(kMsgToggleRepeat);
+        else
+            Window()->PostMessage(kMsgShowSettings);
     }
     fPressed = kNone;
     Invalidate();

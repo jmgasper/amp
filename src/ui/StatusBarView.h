@@ -1,4 +1,5 @@
-// Bottom status bar: playlist/shuffle/repeat buttons, library summary and the MA indicator.
+// Bottom status bar: playlist/shuffle/repeat buttons, library summary, the MA indicator
+// and the Settings button at the right-hand end.
 #pragma once
 #include <MessageRunner.h>
 #include <String.h>
@@ -23,9 +24,11 @@ public:
     void MouseUp(BPoint where) override;
 
 private:
-    enum Hot { kNone, kAdd, kShuffle, kRepeat };
+    enum Hot { kNone, kAdd, kShuffle, kRepeat, kSettings };
     Hot HitTest(BPoint where) const;
     BRect ButtonRect(int index) const;
+    BRect SettingsRect() const;
+    void DrawSettingsButton();
 
     BString fSummary, fTransient, fMAText;
     bool fMAConnected = false;

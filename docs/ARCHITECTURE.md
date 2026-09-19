@@ -27,7 +27,7 @@ src/ui       Haiku Interface Kit
   TrackListView      table with album-grouped mode, sorting, selection, drag & drop
   AlbumGridView      album cover grid
   ArtistsView        artist list + header + grouped track list
-  StatusBarView      +/shuffle/repeat, summary, MA indicator
+  StatusBarView      +/shuffle/repeat, summary, MA indicator, Settings button
   SettingsWindow     Library / Music Assistant / Artwork tabs
   ArtStore           scaled BBitmap cache fed by ImageCache
 ```

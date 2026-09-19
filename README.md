@@ -24,6 +24,9 @@ server sends audio straight to the Haiku machine.
   "Add to Up Next". The display shows the playing track's artwork, title, artist and album,
   elapsed and remaining time, the MA badge for streamed tracks, and the source quality
   ("Lossless" or the bit rate).
+- Library folders, the Music Assistant server and account and the artwork sources live in one
+  Settings window, opened from the **Settings** button at the bottom right of the main window
+  or File > Settings….
 
 ## Building on Haiku R1/beta6
 
