@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 struct WsFrame {
     enum Type { None, Text, Binary, Close, Ping, Pong, Error };
@@ -47,4 +47,4 @@ private:
     std::string fReadAhead;
 };
 
-} // namespace tasamp
+} // namespace amp

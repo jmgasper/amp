@@ -13,7 +13,7 @@
 #include <set>
 #include <thread>
 
-namespace tasamp {
+namespace amp {
 
 class MusicAssistant;
 
@@ -58,4 +58,4 @@ private:
     std::atomic<bool> fRunning{false};
 };
 
-} // namespace tasamp
+} // namespace amp

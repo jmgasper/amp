@@ -1,6 +1,7 @@
 #include "TrackListView.h"
 #include "App.h"
 #include "Theme.h"
+#include "Icons.h"
 #include <Bitmap.h>
 #include <Font.h>
 #include <MenuItem.h>
@@ -13,7 +14,7 @@
 #include <cstdio>
 #include <cmath>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 const uint32 kMsgLoadingTick = 'ldtk';
@@ -82,7 +83,7 @@ BRect TrackListView::LoadingBarRect() const
     BRect bounds = Bounds();
     float width = std::min(320.0f, bounds.Width() - 80);
     float left = bounds.left + (bounds.Width() - width) / 2;
-    float top = bounds.top + theme::kHeaderHeight + 62;
+    float top = bounds.top + 62;
     return BRect(floorf(left), top, floorf(left + width), top + 11);
 }
 
@@ -93,7 +94,7 @@ void TrackListView::DrawLoading(BRect bounds)
     SetFont(&font);
     SetHighColor(theme::kListSecondaryText);
     DrawTruncated(this, fLoadingText.IsEmpty() ? "Loading…" : fLoadingText.String(),
-        BRect(bounds.left + 20, bounds.top + theme::kHeaderHeight + 28, bounds.right - 20, bounds.top + theme::kHeaderHeight + 52),
+        BRect(bounds.left + 20, bounds.top + 28, bounds.right - 20, bounds.top + 52),
         B_ALIGN_CENTER, 0);
     // indeterminate "barber pole" in the iTunes blue
     BRect bar = LoadingBarRect();
@@ -159,6 +160,7 @@ void TrackListView::SetTracks(const std::vector<int64_t>& ids, int mode, int64_t
     if (Bounds().top > maxScroll)
         ScrollTo(0, maxScroll);
     Invalidate();
+    InvalidateHeader(); // the mode decides whether the artwork column shows
 }
 
 int32 TrackListView::PositionOfRow(int row) const
@@ -230,7 +232,7 @@ void TrackListView::Relayout()
     if (fMode == kGrouped) {
         Library& library = App()->GetLibrary();
         Library::Locker locker(library);
-        float y = theme::kHeaderHeight;
+        float y = 0;
         const Track* previous = nullptr;
         auto sameAlbum = [](const Track* a, const Track* b) {
             if (!a || !b)
@@ -292,11 +294,11 @@ float TrackListView::ContentHeight() const
 {
     if (fMode == kGrouped) {
         if (fGroups.empty())
-            return theme::kHeaderHeight;
+            return 0;
         const Group& last = fGroups.back();
         return last.top + last.height;
     }
-    return theme::kHeaderHeight + fTracks.size() * theme::kRowHeight;
+    return fTracks.size() * theme::kRowHeight;
 }
 
 void TrackListView::UpdateScrollBar()
@@ -317,6 +319,7 @@ void TrackListView::FrameResized(float width, float height)
     LayoutColumns();
     UpdateScrollBar();
     Invalidate();
+    InvalidateHeader(); // the flexible column width changed
 }
 
 float TrackListView::RowsLeft() const
@@ -360,14 +363,12 @@ BRect TrackListView::RowRect(int row) const
         const Group& group = fGroups[g];
         top = group.top + (row - group.firstRow) * theme::kRowHeight;
     } else
-        top = theme::kHeaderHeight + row * theme::kRowHeight;
+        top = row * theme::kRowHeight;
     return BRect(RowsLeft(), top, Bounds().right, top + theme::kRowHeight - 1);
 }
 
 int TrackListView::RowAt(BPoint where) const
 {
-    if (where.y < Bounds().top + theme::kHeaderHeight)
-        return -1;
     if (fMode == kGrouped) {
         if (where.x < RowsLeft())
             return -1;
@@ -380,7 +381,7 @@ int TrackListView::RowAt(BPoint where) const
             return -1;
         return row;
     }
-    int row = (int)((where.y - theme::kHeaderHeight) / theme::kRowHeight);
+    int row = (int)(where.y / theme::kRowHeight);
     return (row >= 0 && row < (int)fTracks.size()) ? row : -1;
 }
 
@@ -418,29 +419,29 @@ BString TrackListView::CellText(const Track& track, int field) const
     }
 }
 
-void TrackListView::DrawHeader(BRect bounds)
+void TrackListView::DrawHeader(BView* target, BRect bounds)
 {
     BRect header(bounds.left, bounds.top, bounds.right, bounds.top + theme::kHeaderHeight - 1);
-    FillVerticalGradient(this, header, theme::kHeaderTop, theme::kHeaderBottom);
-    SetHighColor(theme::kHeaderBorder);
-    StrokeLine(header.LeftBottom(), header.RightBottom());
+    FillVerticalGradient(target, header, theme::kHeaderTop, theme::kHeaderBottom);
+    target->SetHighColor(theme::kHeaderBorder);
+    target->StrokeLine(header.LeftBottom(), header.RightBottom());
     BFont font(be_bold_font);
     font.SetSize(11);
-    SetFont(&font);
+    target->SetFont(&font);
     float left = RowsLeft();
     if (fMode == kGrouped) {
         BRect cell(0, header.top, kArtColumnWidth - 1, header.bottom);
-        SetHighColor(theme::kHeaderText);
-        DrawTruncated(this, "Artwork", cell, B_ALIGN_CENTER, 0);
-        SetHighColor(theme::kHeaderBorder);
-        StrokeLine(BPoint(cell.right, header.top), BPoint(cell.right, header.bottom));
+        target->SetHighColor(theme::kHeaderText);
+        DrawTruncated(target, "Artwork", cell, B_ALIGN_CENTER, 0);
+        target->SetHighColor(theme::kHeaderBorder);
+        target->StrokeLine(BPoint(cell.right, header.top), BPoint(cell.right, header.bottom));
     }
     for (size_t i = 0; i < fColumns.size(); i++) {
         const Column& c = fColumns[i];
         BRect cell(left, header.top, left + c.width - 1, header.bottom);
         if (fSortField == c.field && fMode == kPlain) {
-            FillVerticalGradient(this, cell, theme::kHeaderSortedTop, theme::kHeaderSortedBottom);
-            SetHighColor(theme::kHeaderText);
+            FillVerticalGradient(target, cell, theme::kHeaderSortedTop, theme::kHeaderSortedBottom);
+            target->SetHighColor(theme::kHeaderText);
             float cx = cell.right - 8;
             float cy = (cell.top + cell.bottom) / 2;
             BPoint tri[3];
@@ -449,12 +450,12 @@ void TrackListView::DrawHeader(BRect bounds)
             } else {
                 tri[0] = BPoint(cx - 4, cy - 2); tri[1] = BPoint(cx + 4, cy - 2); tri[2] = BPoint(cx, cy + 2);
             }
-            FillPolygon(tri, 3);
+            target->FillPolygon(tri, 3);
         }
-        SetHighColor(theme::kHeaderText);
-        DrawTruncated(this, c.title, BRect(cell.left, cell.top, cell.right - (fSortField == c.field ? 14 : 0), cell.bottom), c.align, 4);
-        SetHighColor(theme::kHeaderBorder);
-        StrokeLine(BPoint(cell.right, header.top + 2), BPoint(cell.right, header.bottom - 1));
+        target->SetHighColor(theme::kHeaderText);
+        DrawTruncated(target, c.title, BRect(cell.left, cell.top, cell.right - (fSortField == c.field ? 14 : 0), cell.bottom), c.align, 4);
+        target->SetHighColor(theme::kHeaderBorder);
+        target->StrokeLine(BPoint(cell.right, header.top + 2), BPoint(cell.right, header.bottom - 1));
         left += c.width;
     }
 }
@@ -485,16 +486,9 @@ void TrackListView::DrawRow(int row, BRect rect, bool selected, bool active)
         left += c.width;
         if (c.field == kFieldIndicator) {
             if (isCurrent) {
-                float cx = (cell.left + cell.right) / 2;
-                float cy = (cell.top + cell.bottom) / 2;
-                SetHighColor(selected ? theme::kSelectedText : Rgb(60, 60, 60));
-                FillRect(BRect(cx - 4, cy - 2, cx - 2, cy + 2));
-                BPoint cone[4] = {BPoint(cx - 2, cy - 2), BPoint(cx + 1, cy - 5), BPoint(cx + 1, cy + 5), BPoint(cx - 2, cy + 2)};
-                FillPolygon(cone, 4);
-                if (fNowState == kPlaying) {
-                    StrokeArc(BPoint(cx + 2, cy), 3, 3, -45, 90);
-                    StrokeArc(BPoint(cx + 2, cy), 5.5f, 5.5f, -45, 90);
-                }
+                // the playing row gets a small speaker, as a Font Awesome glyph
+                icons::Draw(this, icons::kVolume, cell.InsetByCopy(1, 2), cell.Height() - 4,
+                    selected ? theme::kSelectedText : Rgb(60, 60, 60));
             }
             continue;
         }
@@ -571,9 +565,8 @@ void TrackListView::Draw(BRect updateRect)
             font.SetSize(14);
             SetFont(&font);
             SetHighColor(theme::kListSecondaryText);
-            DrawTruncated(this, fEmptyText.String(), BRect(bounds.left, bounds.top + 40, bounds.right, bounds.top + 70), B_ALIGN_CENTER, 0);
+            DrawTruncated(this, fEmptyText.String(), BRect(bounds.left, bounds.top + 24, bounds.right, bounds.top + 54), B_ALIGN_CENTER, 0);
         }
-        DrawHeader(bounds);
         return;
     }
     Library::Locker locker(App()->GetLibrary());
@@ -590,8 +583,8 @@ void TrackListView::Draw(BRect updateRect)
             }
         }
     } else {
-        int first = std::max(0, (int)((updateRect.top - theme::kHeaderHeight) / theme::kRowHeight));
-        int last = std::min((int)fTracks.size() - 1, (int)((updateRect.bottom - theme::kHeaderHeight) / theme::kRowHeight) + 1);
+        int first = std::max(0, (int)(updateRect.top / theme::kRowHeight));
+        int last = std::min((int)fTracks.size() - 1, (int)(updateRect.bottom / theme::kRowHeight) + 1);
         for (int row = first; row <= last; row++)
             DrawRow(row, RowRect(row), fSelection.count(row) != 0, active);
     }
@@ -602,7 +595,6 @@ void TrackListView::Draw(BRect updateRect)
         StrokeLine(BPoint(RowsLeft(), y), BPoint(bounds.right, y));
         SetPenSize(1);
     }
-    DrawHeader(bounds);
 }
 
 void TrackListView::SortTracks()
@@ -655,47 +647,117 @@ void TrackListView::PostSelectionChanged()
     Window()->PostMessage(kMsgSelectionChanged);
 }
 
+// ---- TrackHeaderView --------------------------------------------------------
+
+TrackHeaderView::TrackHeaderView(TrackListView* list, const char* name)
+    : BView(name, B_WILL_DRAW | B_FULL_UPDATE_ON_RESIZE)
+    , fList(list)
+{
+    SetViewColor(B_TRANSPARENT_COLOR);
+    SetExplicitMinSize(BSize(160, theme::kHeaderHeight));
+    SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, theme::kHeaderHeight));
+}
+
+TrackHeaderView::~TrackHeaderView()
+{
+    if (fList != nullptr && fList->fHeaderView == this)
+        fList->fHeaderView = nullptr;
+}
+
+void TrackHeaderView::Draw(BRect updateRect)
+{
+    if (fList != nullptr)
+        fList->DrawHeader(this, Bounds());
+}
+
+void TrackHeaderView::MouseDown(BPoint where)
+{
+    if (fList != nullptr)
+        fList->HeaderMouseDown(where, this);
+}
+
+void TrackHeaderView::MouseMoved(BPoint where, uint32 transit, const BMessage* drag)
+{
+    if (fList != nullptr)
+        fList->HeaderMouseMoved(where);
+}
+
+void TrackHeaderView::MouseUp(BPoint where)
+{
+    if (fList != nullptr)
+        fList->HeaderMouseUp();
+}
+
+void TrackListView::HeaderMouseDown(BPoint where, BView* target)
+{
+    // sort (plain mode, not playlists) or start a column resize
+    float left = 0;
+    int column = ColumnAt(where.x, &left);
+    if (column < 0)
+        return;
+    float right = left + fColumns[column].width;
+    if (right - where.x < 5 && column + 1 < (int)fColumns.size() && !fColumns[column].flexible) {
+        fResizeColumn = column;
+        fResizeStartX = where.x;
+        fResizeStartWidth = fColumns[column].width;
+        target->SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS | B_NO_POINTER_HISTORY);
+        return;
+    }
+    if (fMode == kPlain && fPlaylistId == 0 && fColumns[column].field != kFieldIndicator) {
+        int field = fColumns[column].field;
+        if (fSortField == field)
+            fSortAscending = !fSortAscending;
+        else {
+            fSortField = field;
+            fSortAscending = true;
+        }
+        std::vector<int64_t> selected = SelectedTracks();
+        SortTracks();
+        fSelection.clear();
+        for (size_t i = 0; i < fTracks.size(); i++)
+            if (std::find(selected.begin(), selected.end(), fTracks[i]) != selected.end())
+                fSelection.insert((int)i);
+        Invalidate();
+        InvalidateHeader();
+    }
+}
+
+void TrackListView::HeaderMouseMoved(BPoint where)
+{
+    if (fResizeColumn < 0)
+        return;
+    fColumns[fResizeColumn].width = std::max(30.0f, fResizeStartWidth + (where.x - fResizeStartX));
+    LayoutColumns();
+    Invalidate();
+    InvalidateHeader();
+}
+
+void TrackListView::HeaderMouseUp()
+{
+    fResizeColumn = -1;
+}
+
+void TrackListView::InvalidateHeader()
+{
+    if (fHeaderView)
+        fHeaderView->Invalidate();
+}
+
+TrackHeaderView* TrackListView::HeaderView()
+{
+    if (!fHeaderView)
+        fHeaderView = new TrackHeaderView(this);
+    return fHeaderView;
+}
+
 void TrackListView::MouseDown(BPoint where)
 {
     MakeFocus(true);
-    BRect bounds = Bounds();
     int32 buttons = 0, clicks = 1, modifiers = 0;
     BMessage* current = Window()->CurrentMessage();
     current->FindInt32("buttons", &buttons);
     current->FindInt32("clicks", &clicks);
     current->FindInt32("modifiers", &modifiers);
-    if (where.y < bounds.top + theme::kHeaderHeight) {
-        // header: sort (plain mode, not playlists) or start a column resize
-        float left = 0;
-        int column = ColumnAt(where.x, &left);
-        if (column >= 0) {
-            float right = left + fColumns[column].width;
-            if (right - where.x < 5 && column + 1 < (int)fColumns.size() && !fColumns[column].flexible) {
-                fResizeColumn = column;
-                fResizeStartX = where.x;
-                fResizeStartWidth = fColumns[column].width;
-                SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS | B_NO_POINTER_HISTORY);
-                return;
-            }
-            if (fMode == kPlain && fPlaylistId == 0 && fColumns[column].field != kFieldIndicator) {
-                int field = fColumns[column].field;
-                if (fSortField == field)
-                    fSortAscending = !fSortAscending;
-                else {
-                    fSortField = field;
-                    fSortAscending = true;
-                }
-                std::vector<int64_t> selected = SelectedTracks();
-                SortTracks();
-                fSelection.clear();
-                for (size_t i = 0; i < fTracks.size(); i++)
-                    if (std::find(selected.begin(), selected.end(), fTracks[i]) != selected.end())
-                        fSelection.insert((int)i);
-                Invalidate();
-            }
-        }
-        return;
-    }
     int row = RowAt(where);
     if (buttons & B_SECONDARY_MOUSE_BUTTON) {
         if (row >= 0 && !fSelection.count(row)) {
@@ -829,7 +891,7 @@ int TrackListView::DropIndexAt(BPoint where) const
 {
     if (fTracks.empty())
         return 0;
-    float y = where.y - theme::kHeaderHeight;
+    float y = where.y;
     int index = (int)((y + theme::kRowHeight / 2) / theme::kRowHeight);
     return std::max(0, std::min((int)fTracks.size(), index));
 }
@@ -899,8 +961,8 @@ void TrackListView::ScrollToRow(int row)
 {
     BRect rect = RowRect(row);
     BRect bounds = Bounds();
-    if (rect.top < bounds.top + theme::kHeaderHeight)
-        ScrollTo(0, std::max(0.0f, rect.top - theme::kHeaderHeight));
+    if (rect.top < bounds.top)
+        ScrollTo(0, std::max(0.0f, rect.top));
     else if (rect.bottom > bounds.bottom)
         ScrollTo(0, rect.bottom - bounds.Height());
 }
@@ -1057,4 +1119,4 @@ void TrackListView::ShowContextMenu(int row, BPoint where)
     menu->Go(ConvertToScreen(where), true, true, true);
 }
 
-} // namespace tasamp
+} // namespace amp

@@ -4,7 +4,7 @@
 #include <mutex>
 #include <sys/stat.h>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 
@@ -115,7 +115,7 @@ std::string Http::UrlEncode(const std::string& text)
 
 std::string Http::UserAgent()
 {
-    return "TasAmp/0.1.0 (Haiku; https://github.com/jmgasper/tasamp)";
+    return "Amp/0.1.0 (Haiku; https://github.com/jmgasper/amp)";
 }
 
-} // namespace tasamp
+} // namespace amp

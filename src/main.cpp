@@ -2,7 +2,7 @@
 
 int main()
 {
-    tasamp::TasAmpApp app;
+    amp::AmpApp app;
     app.Run();
     return 0;
 }

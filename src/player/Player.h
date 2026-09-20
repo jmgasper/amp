@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 class Library;
 class MusicAssistant;
@@ -104,4 +104,4 @@ private:
     std::atomic<int> fMAQuality{0};          // 0 unknown, -1 lossless, >0 kbit/s (current MA stream)
 };
 
-} // namespace tasamp
+} // namespace amp

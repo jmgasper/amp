@@ -2,7 +2,7 @@
 #include "Http.h"
 #include <cstdio>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 
@@ -156,7 +156,7 @@ bool MusicAssistant::Login(std::string& error)
         error = "no Music Assistant username configured";
         return false;
     }
-    Json body = {{"credentials", {{"username", username}, {"password", password}}}, {"device_name", "TasAmp"}};
+    Json body = {{"credentials", {{"username", username}, {"password", password}}}, {"device_name", "Amp"}};
     long status = 0;
     Json reply = Post("/auth/login", body, status, error, false);
     if (reply.is_null())
@@ -540,7 +540,7 @@ bool MusicAssistant::FetchLibraryChecked(MASyncResult& out, const std::function<
         return false;
     }
     for (const Json& item : items) {
-        // playlist contents are fetched when a playlist is opened (see TasAmpApp::LoadMAPlaylist)
+        // playlist contents are fetched when a playlist is opened (see AmpApp::LoadMAPlaylist)
         out.playlists.push_back(ParsePlaylist(item, *this));
         out.playlistTrackUris.push_back({});
     }
@@ -715,4 +715,4 @@ MAQueueState MusicAssistant::QueueState(const std::string& playerId)
     return state;
 }
 
-} // namespace tasamp
+} // namespace amp

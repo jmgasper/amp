@@ -3,7 +3,7 @@
 #include <LayoutBuilder.h>
 #include <Screen.h>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 const uint32 kMsgOk = 'okay';
@@ -63,4 +63,4 @@ void NameDialog::MessageReceived(BMessage* message)
     }
 }
 
-} // namespace tasamp
+} // namespace amp

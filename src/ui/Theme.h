@@ -1,11 +1,11 @@
-// Colours, fonts and drawing helpers that give TasAmp its iTunes 8 look.
+// Colours, fonts and drawing helpers that give Amp its iTunes 8 look.
 #pragma once
 #include <GraphicsDefs.h>
 #include <Rect.h>
 #include <View.h>
 #include <String.h>
 
-namespace tasamp {
+namespace amp {
 
 inline rgb_color Rgb(uint8 r, uint8 g, uint8 b, uint8 a = 255) { return {r, g, b, a}; }
 
@@ -73,4 +73,4 @@ BString TruncateToWidth(const BView* view, const char* text, float width);
 void DrawTruncated(BView* view, const char* text, BRect rect, alignment align = B_ALIGN_LEFT, float inset = 4.0f);
 rgb_color Blend(rgb_color a, rgb_color b, float amount);
 
-} // namespace tasamp
+} // namespace amp

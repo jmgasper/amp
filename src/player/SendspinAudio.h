@@ -8,7 +8,7 @@
 #include <mutex>
 #include <thread>
 
-namespace tasamp {
+namespace amp {
 
 class SendspinAudio : public SendspinSink {
 public:
@@ -60,4 +60,4 @@ private:
     int fGeneration = 0;
 };
 
-} // namespace tasamp
+} // namespace amp

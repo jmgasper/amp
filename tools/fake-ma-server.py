@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""A tiny stand-in for a Music Assistant server, enough to exercise TasAmp's integration:
+"""A tiny stand-in for a Music Assistant server, enough to exercise Amp's integration:
 login, library commands, playlists, player queue commands and a Sendspin /sendspin proxy that
 streams a synthesised tone as PCM chunks in the unencrypted transition-mode protocol that
-aiosendspin 9.x accepts. Not a faithful reimplementation; only the shapes TasAmp relies on.
+aiosendspin 9.x accepts. Not a faithful reimplementation; only the shapes Amp relies on.
 
     python3 tools/fake-ma-server.py [port]      (default 8096; user: demo, password: demo)
 """
@@ -165,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
         if command == "players/get":
             player_id = args.get("player_id")
             if player_id in PLAYERS:
-                return {"player_id": player_id, "name": "TasAmp", "available": True, "playback_state": QUEUES.get(player_id, {}).get("state", "idle")}
+                return {"player_id": player_id, "name": "Amp", "available": True, "playback_state": QUEUES.get(player_id, {}).get("state", "idle")}
             return None
         if command == "player_queues/play_media":
             player_id = args.get("queue_id")
@@ -292,7 +292,7 @@ class SendspinSession:
                 ["%s/%s" % (f["codec"], f["sample_rate"]) for f in formats], info["player@v1_support"]["buffer_capacity"]))
             self.send_json({"type": "server/hello", "payload": {"server_id": "fake-server", "name": "Fake MA", "version": 1,
                                                                  "connection_reason": "playback", "active_roles": ["player@v1"]}})
-            self.send_json({"type": "group/update", "payload": {"playback_state": "stopped", "group_id": self.client_id, "group_name": "TasAmp"}})
+            self.send_json({"type": "group/update", "payload": {"playback_state": "stopped", "group_id": self.client_id, "group_name": "Amp"}})
             PLAYERS[self.client_id] = self
             while True:
                 opcode, payload = self.read_frame()

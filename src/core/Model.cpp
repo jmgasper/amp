@@ -3,7 +3,7 @@
 #include <cctype>
 #include <cstdio>
 
-namespace tasamp {
+namespace amp {
 
 std::string ToLower(const std::string& text)
 {
@@ -82,4 +82,4 @@ std::string FormatDuration(int64_t ms)
     return buffer;
 }
 
-} // namespace tasamp
+} // namespace amp

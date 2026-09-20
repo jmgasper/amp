@@ -12,7 +12,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 
@@ -106,7 +106,7 @@ bool WebSocket::Connect(const std::string& host, int port, const std::string& pa
         "Connection: Upgrade\r\n"
         "Sec-WebSocket-Key: " + key + "\r\n"
         "Sec-WebSocket-Version: 13\r\n"
-        "User-Agent: TasAmp/0.1.0\r\n";
+        "User-Agent: Amp/0.1.0\r\n";
     for (const std::string& h : extraHeaders)
         request += h + "\r\n";
     request += "\r\n";
@@ -377,4 +377,4 @@ WsFrame WebSocket::Receive(int timeoutMs)
     }
 }
 
-} // namespace tasamp
+} // namespace amp

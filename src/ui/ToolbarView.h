@@ -6,7 +6,7 @@
 #include <TextControl.h>
 #include <View.h>
 
-namespace tasamp {
+namespace amp {
 
 class ToolbarView : public BView {
 public:
@@ -57,4 +57,4 @@ private:
     BRect fPrevRect, fPlayRect, fNextRect, fVolumeRect, fLcdRect, fProgressRect, fViewRect, fSearchRect;
 };
 
-} // namespace tasamp
+} // namespace amp

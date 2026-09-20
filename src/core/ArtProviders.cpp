@@ -6,7 +6,7 @@
 #include <mutex>
 #include <thread>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 
@@ -231,4 +231,4 @@ std::vector<std::string> ArtProviders::Discogs(const std::string& token, const A
     return urls;
 }
 
-} // namespace tasamp
+} // namespace amp

@@ -2,7 +2,7 @@
 #pragma once
 #include <SupportDefs.h>
 
-namespace tasamp {
+namespace amp {
 
 enum {
     // player -> UI
@@ -53,4 +53,4 @@ enum {
 
 enum PlayerState { kStopped = 0, kPlaying = 1, kPaused = 2, kLoading = 3 };
 
-} // namespace tasamp
+} // namespace amp

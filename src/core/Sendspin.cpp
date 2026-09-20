@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 const int kBufferCapacityBytes = 1536 * 1024;   // ~8 s of 48 kHz stereo 16-bit
@@ -162,7 +162,7 @@ bool SendspinClient::Session()
     Json hello = {{"type", "client/hello"}, {"payload", {
         {"client_id", clientId}, {"name", name}, {"version", 1},
         {"supported_roles", Json::array({"player@v1"})},
-        {"device_info", {{"product_name", "TasAmp"}, {"manufacturer", "Haiku"}, {"software_version", "0.1.0"}}},
+        {"device_info", {{"product_name", "Amp"}, {"manufacturer", "Haiku"}, {"software_version", "0.1.0"}}},
         {"player@v1_support", {{"supported_formats", formats}, {"buffer_capacity", kBufferCapacityBytes},
             {"supported_commands", Json::array({"volume", "mute"})}}}}}};
     if (!ws->SendText(hello.dump()))
@@ -291,4 +291,4 @@ void SendspinClient::HandleBinary(const std::string& data)
     fSink->SendspinChunk(localTs, data.data() + headerSize, data.size() - headerSize);
 }
 
-} // namespace tasamp
+} // namespace amp

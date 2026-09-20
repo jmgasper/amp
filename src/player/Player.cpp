@@ -5,7 +5,7 @@
 #include <OS.h>
 #include <cstdio>
 
-namespace tasamp {
+namespace amp {
 
 Player::Player(Library& library, MusicAssistant& ma)
     : fLibrary(library), fMA(ma), fDecoder(fOutput)
@@ -505,4 +505,4 @@ void Player::Ticker()
     }
 }
 
-} // namespace tasamp
+} // namespace amp

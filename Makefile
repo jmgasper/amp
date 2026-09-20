@@ -15,23 +15,23 @@ UI_OBJ = $(UI:%.cpp=$(BUILD)/%.o)
 CORE_LIBS = -lcurl -lsqlite3 -ltag -lnetwork -lpthread
 LIBS = -lbe -lmedia -ltranslation -ltracker -llocalestub $(CORE_LIBS)
 .PHONY: all core player package clean icon check
-all: $(BUILD)/TasAmp
+all: $(BUILD)/Amp
 core: $(CORE_OBJ)
-$(BUILD)/TasAmp: $(CORE_OBJ) $(PLAYER_OBJ) $(UI_OBJ) resources/TasAmp.rdef resources/branding/tasamp-icon.hvif
+$(BUILD)/Amp: $(CORE_OBJ) $(PLAYER_OBJ) $(UI_OBJ) resources/Amp.rdef resources/branding/amp-icon.hvif
 	$(CXX) -o $@.new $(CORE_OBJ) $(PLAYER_OBJ) $(UI_OBJ) $(LIBS)
-	rc -o $(BUILD)/TasAmp.rsrc resources/TasAmp.rdef
-	xres -o $@.new $(BUILD)/TasAmp.rsrc
+	rc -o $(BUILD)/Amp.rsrc resources/Amp.rdef
+	xres -o $@.new $(BUILD)/Amp.rsrc
 	mimeset -f $@.new
 	mv $@.new $@
 $(BUILD)/%.o: %.cpp
 	mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
-$(BUILD)/tasamp_core_tests: $(CORE_OBJ) $(BUILD)/tests/CoreTests.o
+$(BUILD)/amp_core_tests: $(CORE_OBJ) $(BUILD)/tests/CoreTests.o
 	$(CXX) -o $@ $^ $(CORE_LIBS)
-check: $(BUILD)/tasamp_core_tests
-	$(BUILD)/tasamp_core_tests
+check: $(BUILD)/amp_core_tests
+	$(BUILD)/amp_core_tests
 icon:
-	python3 tools/make-icon.py resources/branding/tasamp-icon.hvif resources/branding/tasamp-icon-preview.png
+	python3 tools/make-icon.py resources/branding/amp-icon.hvif resources/branding/amp-icon-preview.png
 package: all
 	bash tools/package-haiku.sh
 clean:

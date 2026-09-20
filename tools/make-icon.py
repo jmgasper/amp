@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build TasAmp's application icon: a small amplifier with a Tasmanian-devil-black cabinet,
+"""Build Amp's application icon: a small amplifier with a Tasmanian-devil-black cabinet,
 a warm speaker cone and a bright musical note, drawn to read from 16 px up to 128 px.
 
-    python3 tools/make-icon.py resources/branding/tasamp-icon.hvif [preview.png]
+    python3 tools/make-icon.py resources/branding/amp-icon.hvif [preview.png]
 """
 import os
 import sys
@@ -158,7 +158,7 @@ shapes = [
 icon = {'styles': styles, 'paths': paths, 'shapes': shapes}
 
 if __name__ == '__main__':
-    out = sys.argv[1] if len(sys.argv) > 1 else 'tasamp-icon.hvif'
+    out = sys.argv[1] if len(sys.argv) > 1 else 'amp-icon.hvif'
     data = hvif.encode(icon)
     hvif.decode(data)
     with open(out, 'wb') as f:

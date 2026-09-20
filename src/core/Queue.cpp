@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <random>
 
-namespace tasamp {
+namespace amp {
 
 void PlayQueue::Set(const std::vector<int64_t>& trackIds, int startIndex)
 {
@@ -149,4 +149,4 @@ void PlayQueue::RemoveTrack(int64_t trackId)
         fPosition = (int)fOrder.size() - 1;
 }
 
-} // namespace tasamp
+} // namespace amp

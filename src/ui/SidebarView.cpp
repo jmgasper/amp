@@ -1,5 +1,6 @@
 #include "SidebarView.h"
 #include "Theme.h"
+#include "Icons.h"
 #include "player/Messages.h"
 #include <Font.h>
 #include <MenuItem.h>
@@ -8,7 +9,7 @@
 #include <ScrollBar.h>
 #include <Window.h>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 const float kItemHeight = 20.0f;
@@ -103,22 +104,15 @@ int SidebarView::ItemAt(BPoint where) const
 void SidebarView::DrawIcon(const Item& item, BRect rect, bool selected)
 {
     rgb_color color = selected ? Rgb(255, 255, 255) : Rgb(70, 90, 120);
-    rgb_color fill = selected ? Rgb(230, 236, 250) : Rgb(120, 140, 175);
-    float cx = (rect.left + rect.right) / 2;
-    float cy = (rect.top + rect.bottom) / 2;
-    SetHighColor(color);
+    float size = rect.Height() * 0.9f;
     if (item.source == "music") {
-        DrawNoteIcon(this, rect.InsetByCopy(1, 1), color);
+        icons::Draw(this, icons::kMusic, rect, size, color);
     } else if (item.source == "artists") {
-        FillEllipse(BRect(cx - 3, rect.top + 1, cx + 3, rect.top + 7));
-        FillArc(BRect(cx - 7, rect.top + 7, cx + 7, rect.bottom + 6), 0, 180);
+        icons::Draw(this, icons::kUser, rect, size, color);
     } else if (item.source == "albums") {
-        SetHighColor(fill);
-        FillRect(rect.InsetByCopy(1, 1));
-        SetHighColor(color);
-        StrokeRect(rect.InsetByCopy(1, 1));
-        FillEllipse(BRect(cx - 2, cy - 2, cx + 2, cy + 2));
+        icons::Draw(this, icons::kAlbum, rect, size, color);
     } else if (item.source == "ma") {
+        // the Music Assistant badge stays a badge: it is the provider's mark, not a glyph
         BRect badge = rect.InsetByCopy(0, 2);
         SetHighColor(selected ? Rgb(255, 255, 255) : theme::kBadgeBackground);
         FillRoundRect(badge, 3, 3);
@@ -133,13 +127,7 @@ void SidebarView::DrawIcon(const Item& item, BRect rect, bool selected)
         DrawString("MA", BPoint(badge.left + (badge.Width() - width) / 2 + 0.5f,
             badge.top + (badge.Height() - (fh.ascent + fh.descent)) / 2 + fh.ascent));
     } else {
-        // playlist: a small list glyph
-        SetHighColor(fill);
-        FillRoundRect(rect.InsetByCopy(1, 1), 2, 2);
-        SetHighColor(color);
-        StrokeRoundRect(rect.InsetByCopy(1, 1), 2, 2);
-        for (int i = 0; i < 3; i++)
-            StrokeLine(BPoint(rect.left + 4, rect.top + 5 + i * 3), BPoint(rect.right - 4, rect.top + 5 + i * 3));
+        icons::Draw(this, icons::kList, rect, size, color);
     }
 }
 
@@ -295,4 +283,4 @@ void SidebarView::ShowContextMenu(int index, BPoint where)
     menu->Go(ConvertToScreen(where), true, true, true);
 }
 
-} // namespace tasamp
+} // namespace amp

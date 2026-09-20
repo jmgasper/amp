@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 class ArtProviders {
 public:
@@ -20,4 +20,4 @@ public:
         std::vector<std::string>& downloadHeaders);
 };
 
-} // namespace tasamp
+} // namespace amp

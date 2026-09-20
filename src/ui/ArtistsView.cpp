@@ -1,6 +1,7 @@
 #include "ArtistsView.h"
 #include "App.h"
 #include "Theme.h"
+#include "Icons.h"
 #include <Bitmap.h>
 #include <Font.h>
 #include <LayoutBuilder.h>
@@ -9,7 +10,7 @@
 #include <SplitView.h>
 #include <Window.h>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 const float kArtistRowHeight = 40.0f;
@@ -114,10 +115,7 @@ void ArtistListView::Draw(BRect updateRect)
             DrawBitmapFitted(this, bitmap, art);
         else {
             FillVerticalGradient(this, art, theme::kArtPlaceholderTop, theme::kArtPlaceholderBottom);
-            SetHighColor(theme::kArtPlaceholderNote);
-            float cx = (art.left + art.right) / 2;
-            FillEllipse(BRect(cx - 5, art.top + 5, cx + 5, art.top + 15));
-            FillArc(BRect(cx - 11, art.top + 15, cx + 11, art.bottom + 8), 0, 180);
+            icons::DrawFitted(this, icons::kUser, art.InsetByCopy(art.Width() * 0.2f, art.Height() * 0.2f), theme::kArtPlaceholderNote);
         }
         SetHighColor(160, 160, 160);
         StrokeRect(art);
@@ -232,10 +230,7 @@ void ArtistHeaderView::Draw(BRect updateRect)
         DrawBitmapFitted(this, bitmap, art);
     else {
         FillVerticalGradient(this, art, theme::kArtPlaceholderTop, theme::kArtPlaceholderBottom);
-        SetHighColor(theme::kArtPlaceholderNote);
-        float cx = (art.left + art.right) / 2;
-        FillEllipse(BRect(cx - 12, art.top + 12, cx + 12, art.top + 36));
-        FillArc(BRect(cx - 26, art.top + 38, cx + 26, art.bottom + 20), 0, 180);
+        icons::DrawFitted(this, icons::kUser, art.InsetByCopy(art.Width() * 0.22f, art.Height() * 0.22f), theme::kArtPlaceholderNote);
     }
     SetHighColor(150, 150, 150);
     StrokeRect(art);
@@ -279,10 +274,15 @@ ArtistsView::ArtistsView()
     fTracks->SetEmptyText("This artist has no songs");
     BScrollView* listScroll = new BScrollView("artist-scroll", fList, 0, false, true, B_NO_BORDER);
     BScrollView* trackScroll = new BScrollView("artist-track-scroll", fTracks, 0, false, true, B_NO_BORDER);
+    // the track list's column header sits above its scroll view, like in the main window
+    BView* trackPane = new BView("artist-track-pane", 0);
+    BLayoutBuilder::Group<>(trackPane, B_VERTICAL, 0)
+        .Add(fTracks->HeaderView())
+        .Add(trackScroll);
     BView* right = new BView("artist-right", 0);
     BLayoutBuilder::Group<>(right, B_VERTICAL, 0)
         .Add(fHeader)
-        .Add(trackScroll);
+        .Add(trackPane);
     BSplitView* split = new BSplitView(B_HORIZONTAL, 0);
     split->AddChild(listScroll, 0.28f);
     split->AddChild(right, 0.72f);
@@ -340,4 +340,4 @@ void ArtistsView::Refresh()
     fTracks->Invalidate();
 }
 
-} // namespace tasamp
+} // namespace amp

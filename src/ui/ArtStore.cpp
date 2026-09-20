@@ -6,7 +6,7 @@
 #include <View.h>
 #include <cstdio>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 const size_t kMaxBitmaps = 900;
@@ -201,4 +201,4 @@ void ArtStore::Run()
     }
 }
 
-} // namespace tasamp
+} // namespace amp

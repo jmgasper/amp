@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 struct HttpResponse {
     long status = 0;
@@ -24,4 +24,4 @@ public:
     static std::string UserAgent();
 };
 
-} // namespace tasamp
+} // namespace amp

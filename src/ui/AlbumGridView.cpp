@@ -8,7 +8,7 @@
 #include <ScrollBar.h>
 #include <Window.h>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 const float kCellWidth = 172.0f;
@@ -291,4 +291,4 @@ void AlbumGridView::ShowContextMenu(int index, BPoint where)
     menu->Go(ConvertToScreen(where), true, true, true);
 }
 
-} // namespace tasamp
+} // namespace amp

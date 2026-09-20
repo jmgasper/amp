@@ -12,7 +12,7 @@
 #include <cstdio>
 #include <map>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 const uint32 kMsgAbout = 'abou';
@@ -20,7 +20,7 @@ const uint32 kMsgReloadNow = 'rlnw';
 }
 
 MainWindow::MainWindow(BRect frame)
-    : BWindow(frame, "TasAmp", B_TITLED_WINDOW, B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
+    : BWindow(frame, "Amp", B_TITLED_WINDOW, B_ASYNCHRONOUS_CONTROLS | B_AUTO_UPDATE_SIZE_LIMITS | B_QUIT_ON_WINDOW_CLOSE)
 {
     SettingsData settings = App()->GetSettings().Get();
     fViewMode = settings.viewMode;
@@ -36,12 +36,17 @@ MainWindow::MainWindow(BRect frame)
     fGrid = new AlbumGridView();
     fArtists = new ArtistsView();
     BScrollView* trackScroll = new BScrollView("track-scroll", fTrackList, 0, false, true, B_NO_BORDER);
+    // the column header is a sibling above the scroll view: it never scrolls
+    BView* listPane = new BView("list-pane", 0);
+    BLayoutBuilder::Group<>(listPane, B_VERTICAL, 0)
+        .Add(fTrackList->HeaderView())
+        .Add(trackScroll);
     BScrollView* gridScroll = new BScrollView("grid-scroll", fGrid, 0, false, true, B_NO_BORDER);
     BScrollView* sidebarScroll = new BScrollView("sidebar-scroll", fSidebar, 0, false, true, B_NO_BORDER);
     fContent = new BView("content", 0);
     fCards = new BCardLayout();
     fContent->SetLayout(fCards);
-    fCards->AddView(trackScroll);
+    fCards->AddView(listPane);
     fCards->AddView(gridScroll);
     fCards->AddView(fArtists);
     fSplit = new BSplitView(B_HORIZONTAL, 0);
@@ -72,7 +77,7 @@ MainWindow::MainWindow(BRect frame)
 
 void MainWindow::BuildMenu()
 {
-    // TasAmp keeps its chrome minimal like iTunes; the menu offers keyboard access to everything.
+    // Amp keeps its chrome minimal like iTunes; the menu offers keyboard access to everything.
     BMenuBar* bar = new BMenuBar("menu");
     BMenu* file = new BMenu("File");
     file->AddItem(new BMenuItem("New Playlist…", new BMessage(kMsgNewPlaylist), 'N'));
@@ -81,7 +86,7 @@ void MainWindow::BuildMenu()
     file->AddSeparatorItem();
     file->AddItem(new BMenuItem("Settings…", new BMessage(kMsgShowSettings), ','));
     file->AddSeparatorItem();
-    file->AddItem(new BMenuItem("About TasAmp", new BMessage(kMsgAbout)));
+    file->AddItem(new BMenuItem("About Amp", new BMessage(kMsgAbout)));
     file->AddItem(new BMenuItem("Quit", new BMessage(B_QUIT_REQUESTED), 'Q'));
     bar->AddItem(file);
     BMenu* controls = new BMenu("Controls");
@@ -477,12 +482,12 @@ void MainWindow::UpdateNowPlaying()
     fTrackList->SetNowPlaying(fNowPlayingTrack, fPlayerState);
     fArtists->TrackList()->SetNowPlaying(fNowPlayingTrack, fPlayerState);
     if (fPlayerState == kStopped)
-        SetTitle("TasAmp");
+        SetTitle("Amp");
     else {
         BString windowTitle(title);
         if (!artist.IsEmpty())
             windowTitle << " — " << artist;
-        windowTitle << " — TasAmp";
+        windowTitle << " — Amp";
         SetTitle(windowTitle.String());
     }
 }
@@ -799,9 +804,9 @@ void MainWindow::MessageReceived(BMessage* message)
             be_app->PostMessage(message);
             break;
         case kMsgAbout: {
-            BAlert* alert = new BAlert("About TasAmp",
-                "TasAmp 0.1.0\n\nA native music player for Haiku with local libraries and Music Assistant streaming.\n"
-                "Artwork from embedded tags, folder art, MusicBrainz/Cover Art Archive, TheAudioDB and Discogs.",
+            BAlert* alert = new BAlert("About Amp",
+                "Amp 0.2.0\n\nA native music player for Haiku with local libraries and Music Assistant streaming.\n"
+                "Icons from Font Awesome Free 6.7.2. Artwork from embedded tags, folder art, MusicBrainz/Cover Art Archive, TheAudioDB and Discogs.",
                 "OK");
             alert->Go(nullptr);
             break;
@@ -906,4 +911,4 @@ void MainWindow::MessageReceived(BMessage* message)
     }
 }
 
-} // namespace tasamp
+} // namespace amp

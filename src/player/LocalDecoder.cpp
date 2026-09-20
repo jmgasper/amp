@@ -5,7 +5,7 @@
 #include <cstring>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 LocalDecoder::LocalDecoder(AudioOutput& output)
     : fOutput(output)
@@ -207,4 +207,4 @@ void LocalDecoder::Run()
     }
 }
 
-} // namespace tasamp
+} // namespace amp

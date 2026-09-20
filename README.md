@@ -1,6 +1,6 @@
-# TasAmp
+# Amp
 
-TasAmp is a native music player for Haiku styled after iTunes 8. It plays a local library
+Amp is a native music player for Haiku styled after iTunes 8. It plays a local library
 (MP3, MP4/M4A/AAC, FLAC, WAV, OGG) and streams tracks from a
 [Music Assistant](https://www.music-assistant.io) server, registering itself as a player so the
 server sends audio straight to the Haiku machine.
@@ -14,7 +14,9 @@ server sends audio straight to the Haiku machine.
   server. Streamed items carry a small **MA** badge everywhere.
 - Browse by song list, album-grouped list with artwork, album grid, artists, and playlists;
   instant search across title, artist and album. Playlists offer the same three views
-  (list, album list, cover grid) and remember their own choice.
+  (list, album list, cover grid) and remember their own choice. The column header lives in
+  its own view above the table, so it stays put and is never redrawn over the rows while
+  the list scrolls.
 - Playlists: create, rename, delete, add and remove songs, drag to reorder, drag songs or
   whole albums onto a playlist in the sidebar, "Sync to Music Assistant" per playlist.
 - Artwork cache with online lookup through Deezer, MusicBrainz + Cover Art Archive,
@@ -27,13 +29,16 @@ server sends audio straight to the Haiku machine.
 - Library folders, the Music Assistant server and account and the artwork sources live in one
   Settings window, opened from the **Settings** button at the bottom right of the main window
   or File > Settings….
+- The toolbar, status bar, sidebar and list buttons draw their glyphs from Font Awesome 6
+  Free (SIL OFL 1.1, icons CC BY 4.0). The font ships inside the package and is registered with
+  the font server on first run, so the buttons look the same on a bare Haiku install.
 
 ## Building on Haiku R1/beta6
 
 ```sh
 pkgman install curl_devel sqlite_devel taglib2_devel
-make -j6            # build-haiku/TasAmp
-make package        # artifacts/tasamp-<version>-x86_64.hpkg
+make -j6            # build-haiku/Amp
+make package        # artifacts/amp-<version>-x86_64.hpkg
 ```
 
 The development VM workflow (sync sources, build, screenshots) is described in
@@ -41,20 +46,21 @@ The development VM workflow (sync sources, build, screenshots) is described in
 
 ## Music Assistant notes
 
-TasAmp talks to Music Assistant 2.10 through its HTTP API (`POST /api`) and connects to the
+Amp talks to Music Assistant 2.10 through its HTTP API (`POST /api`) and connects to the
 authenticated `/sendspin` WebSocket proxy as an unencrypted ("transition mode") Sendspin
 player, which the server allows by default (*Allow legacy clients* in the Sendspin provider
 settings). Music Assistant wraps that player in a "universal player" carrying the name
-configured in Settings; TasAmp sends play and queue commands to that wrapper. Only the
+configured in Settings; Amp sends play and queue commands to that wrapper. Only the
 built-in username/password login provider is supported.
 
 Tracks whose music provider is not loaded on the server (for example a network share that
 is offline) stay in the library but cannot be played; Music Assistant answers "there is
-nothing to play here" and TasAmp reports it in the status bar.
+nothing to play here" and Amp reports it in the status bar.
 
 `tools/fake-ma-server.py` is a small stand-in server used to exercise the integration
 without a real installation.
 
 ## License
 
-MIT. Bundles the nlohmann JSON library (MIT, see `vendor/nlohmann`).
+MIT. Bundles the nlohmann JSON library (MIT, see `vendor/nlohmann`) and the Font Awesome 6
+Free font (fonts SIL OFL 1.1, icons CC BY 4.0, see `vendor/fontawesome`).

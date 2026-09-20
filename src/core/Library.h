@@ -12,7 +12,7 @@
 
 struct sqlite3;
 
-namespace tasamp {
+namespace amp {
 
 struct MASyncResult;
 
@@ -102,4 +102,4 @@ private:
     int64_t fTotalBytes = 0;
 };
 
-} // namespace tasamp
+} // namespace amp

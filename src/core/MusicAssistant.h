@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 struct MASyncResult {
     std::vector<Track> tracks;
@@ -103,4 +103,4 @@ private:
     std::string fToken;
 };
 
-} // namespace tasamp
+} // namespace amp

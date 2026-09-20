@@ -5,7 +5,7 @@
 #include <String.h>
 #include <View.h>
 
-namespace tasamp {
+namespace amp {
 
 class StatusBarView : public BView {
 public:
@@ -38,4 +38,4 @@ private:
     BMessageRunner* fExpiry = nullptr;
 };
 
-} // namespace tasamp
+} // namespace amp

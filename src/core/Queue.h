@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 enum class RepeatMode { Off = 0, All = 1, One = 2 };
 
@@ -38,4 +38,4 @@ private:
     RepeatMode fRepeat = RepeatMode::Off;
 };
 
-} // namespace tasamp
+} // namespace amp

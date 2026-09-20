@@ -20,7 +20,7 @@
 #include <taglib/tpropertymap.h>
 #include <taglib/tvariant.h>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 
@@ -344,4 +344,4 @@ void Scanner::Run(std::vector<std::string> folders, bool force)
             + std::to_string(missing.size()) + " removed" : "Library up to date", true);
 }
 
-} // namespace tasamp
+} // namespace amp

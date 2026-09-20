@@ -5,7 +5,7 @@
 #include <View.h>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 const uint32 kMsgArtistSelected = 'arsl';
 
@@ -60,4 +60,4 @@ private:
     TrackListView* fTracks;
 };
 
-} // namespace tasamp
+} // namespace amp

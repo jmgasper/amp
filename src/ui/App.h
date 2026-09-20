@@ -1,4 +1,4 @@
-// The TasAmp application: owns the library, settings, caches and the player; runs background jobs.
+// The Amp application: owns the library, settings, caches and the player; runs background jobs.
 #pragma once
 #include "ArtStore.h"
 #include "core/ImageCache.h"
@@ -13,14 +13,14 @@
 #include <mutex>
 #include <string>
 
-namespace tasamp {
+namespace amp {
 
 class MainWindow;
 
-class TasAmpApp : public BApplication {
+class AmpApp : public BApplication {
 public:
-    TasAmpApp();
-    virtual ~TasAmpApp();
+    AmpApp();
+    virtual ~AmpApp();
 
     void ReadyToRun() override;
     bool QuitRequested() override;
@@ -46,7 +46,7 @@ public:
     std::string SettingsDirectory() const { return fSettingsDir; }
     bool MASyncRunning() const { return fMASyncRunning; }
 
-    static TasAmpApp* Instance();
+    static AmpApp* Instance();
 
 private:
     void Post(uint32 what, const char* key = nullptr, const char* value = nullptr);
@@ -72,6 +72,6 @@ private:
     std::atomic<bool> fPlaylistSyncRunning{false};
 };
 
-inline TasAmpApp* App() { return TasAmpApp::Instance(); }
+inline AmpApp* App() { return AmpApp::Instance(); }
 
-} // namespace tasamp
+} // namespace amp

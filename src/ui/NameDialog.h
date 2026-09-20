@@ -5,7 +5,7 @@
 #include <TextControl.h>
 #include <Window.h>
 
-namespace tasamp {
+namespace amp {
 
 class NameDialog : public BWindow {
 public:
@@ -19,4 +19,4 @@ private:
     BMessenger fTarget;
 };
 
-} // namespace tasamp
+} // namespace amp

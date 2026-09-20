@@ -1,4 +1,4 @@
-# TasAmp architecture
+# Amp architecture
 
 ```
 src/core     portable C++17 (no Haiku headers except in Scanner's TagLib use)
@@ -28,9 +28,20 @@ src/ui       Haiku Interface Kit
   AlbumGridView      album cover grid
   ArtistsView        artist list + header + grouped track list
   StatusBarView      +/shuffle/repeat, summary, MA indicator, Settings button
+  Icons              Font Awesome glyphs: registers the bundled font, draws it centred
   SettingsWindow     Library / Music Assistant / Artwork tabs
   ArtStore           scaled BBitmap cache fed by ImageCache
 ```
+
+The column header is deliberately *not* part of the scrolled table: `TrackHeaderView` is a
+sibling of the `BScrollView`, so scrolling blits only the rows while the header is painted once
+and stays put. `TrackListView` still owns the columns and hands them to the header through
+`DrawHeader()`/`HeaderMouseDown()`, keeping it in step with `InvalidateHeader()`.
+
+Button glyphs come from Font Awesome 6 Free. `icons::Init()` copies the font shipped in the
+package into the user font directory and calls `update_font_families()`, so the family is
+available on any Haiku install; `icons::Draw()` centres a glyph on its ink box, since the icons
+sit on the baseline with different amounts of space around them.
 
 ## Threads and messaging
 
@@ -91,7 +102,7 @@ are retried after 15 minutes, other misses after a week.
    `active_source`. Playing an MA track calls `player_queues/play_media` for that id; the server
    streams PCM chunks (9-byte header: type 4 + big-endian int64 server timestamp) which
    `SendspinAudio` schedules through the shared `AudioOutput`. `stream/end` advances the
-   TasAmp queue; pause/seek/stop map to `players/cmd/*`.
+   Amp queue; pause/seek/stop map to `players/cmd/*`.
 4. Artwork for MA items is fetched from `/imageproxy/<proxy_id>?size=512&fmt=jpeg` and cached
    like everything else.
 5. Server replies carry explicit nulls, so all fields are read through the type-checked

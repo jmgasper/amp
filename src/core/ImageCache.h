@@ -16,7 +16,7 @@
 
 struct sqlite3;
 
-namespace tasamp {
+namespace amp {
 
 class ImageCache {
 public:
@@ -73,4 +73,4 @@ private:
     std::atomic<bool> fRunning{false};
 };
 
-} // namespace tasamp
+} // namespace amp

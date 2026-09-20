@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 struct ArtSource {
     std::string id;      // "deezer", "musicbrainz", "theaudiodb", "discogs"
@@ -22,7 +22,7 @@ struct SettingsData {
     std::string maPassword;
     std::string maToken;          // short-lived token from the last login
     std::string maPlayerId;       // our Sendspin client id
-    std::string maPlayerName = "TasAmp";
+    std::string maPlayerName = "Amp";
     // Artwork
     std::vector<ArtSource> artSources;
     bool fetchOnlineArt = true;
@@ -59,4 +59,4 @@ private:
 
 std::string GenerateClientId();
 
-} // namespace tasamp
+} // namespace amp

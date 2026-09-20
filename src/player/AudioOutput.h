@@ -7,7 +7,7 @@
 #include <mutex>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 class AudioOutput {
 public:
@@ -62,4 +62,4 @@ private:
     float fCurrentGain = 0.8f;
 };
 
-} // namespace tasamp
+} // namespace amp

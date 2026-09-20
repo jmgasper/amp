@@ -1,4 +1,5 @@
 #include "App.h"
+#include "Icons.h"
 #include "MainWindow.h"
 #include "core/Http.h"
 #include "player/Messages.h"
@@ -13,46 +14,91 @@
 #include <cstdio>
 #include <thread>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
-const char* kSignature = "application/x-vnd.TasAmp";
+const char* kSignature = "application/x-vnd.Amp";
 const int kScannerVersion = 2; // 2: lossless flag and estimated bit rates
-}
 
-TasAmpApp* TasAmpApp::Instance()
+// The app used to be called TasAmp. Move the old user data over once so the
+// Music Assistant account, library and artwork cache survive the rename.
+void MigrateRenamedDirectory(const BPath& parent, const char* oldName, const char* newName)
 {
-    return static_cast<TasAmpApp*>(be_app);
+    BPath target(parent);
+    target.Append(newName);
+    BEntry targetEntry(target.Path());
+    if (targetEntry.Exists())
+        return; // there is already data under the new name
+    BPath source(parent);
+    source.Append(oldName);
+    BEntry sourceEntry(source.Path());
+    if (!sourceEntry.Exists())
+        return;
+    if (rename(source.Path(), target.Path()) != B_OK)
+        fprintf(stderr, "Amp: cannot move %s to %s\n", source.Path(), target.Path());
 }
 
-TasAmpApp::TasAmpApp()
+// The Music Assistant player name was stored in the settings file: keep it in
+// step with the new application name.
+bool RenamePlayerName(SettingsData& data)
+{
+    size_t found = data.maPlayerName.find("TasAmp");
+    if (found == std::string::npos)
+        return false;
+    std::string name;
+    while (found != std::string::npos) {
+        name.append(data.maPlayerName, 0, found);
+        name.append("Amp");
+        data.maPlayerName.erase(0, found + 6);
+        found = data.maPlayerName.find("TasAmp");
+    }
+    name.append(data.maPlayerName);
+    data.maPlayerName = name;
+    return true;
+}
+}
+
+AmpApp* AmpApp::Instance()
+{
+    return static_cast<AmpApp*>(be_app);
+}
+
+AmpApp::AmpApp()
     : BApplication(kSignature)
 {
-    BPath path;
-    find_directory(B_USER_SETTINGS_DIRECTORY, &path, true);
-    path.Append("TasAmp");
+    BPath settingsBase;
+    find_directory(B_USER_SETTINGS_DIRECTORY, &settingsBase, true);
+    MigrateRenamedDirectory(settingsBase, "TasAmp", "Amp");
+    BPath path(settingsBase);
+    path.Append("Amp");
     create_directory(path.Path(), 0755);
     fSettingsDir = path.Path();
-    BPath cache;
-    find_directory(B_USER_CACHE_DIRECTORY, &cache, true);
-    cache.Append("TasAmp");
+    BPath cacheBase;
+    find_directory(B_USER_CACHE_DIRECTORY, &cacheBase, true);
+    MigrateRenamedDirectory(cacheBase, "TasAmp", "Amp");
+    BPath cache(cacheBase);
+    cache.Append("Amp");
     create_directory(cache.Path(), 0755);
     cache.Append("art");
     create_directory(cache.Path(), 0755);
     fCacheDir = cache.Path();
 
     Http::GlobalInit();
+    icons::Init();
     fSettings.reset(new Settings(fSettingsDir + "/settings.json"));
     fSettings->Load();
     SettingsData data = fSettings->Get();
+    bool settingsChanged = RenamePlayerName(data);
     if (data.maPlayerId.empty()) {
         data.maPlayerId = GenerateClientId();
-        fSettings->Update(data);
+        settingsChanged = true;
     }
+    if (settingsChanged)
+        fSettings->Update(data);
     fLibrary.reset(new Library(fSettingsDir + "/library.db"));
     std::string error;
     if (!fLibrary->Open(error))
-        fprintf(stderr, "TasAmp: cannot open library: %s\n", error.c_str());
+        fprintf(stderr, "Amp: cannot open library: %s\n", error.c_str());
     fImages.reset(new ImageCache(fCacheDir, *fSettings));
     fImages->Open();
     fMA.reset(new MusicAssistant());
@@ -97,11 +143,11 @@ TasAmpApp::TasAmpApp()
     };
 }
 
-TasAmpApp::~TasAmpApp()
+AmpApp::~AmpApp()
 {
 }
 
-void TasAmpApp::ReadyToRun()
+void AmpApp::ReadyToRun()
 {
     SettingsData data = fSettings->Get();
     BRect frame(data.windowX, data.windowY, data.windowX + data.windowW, data.windowY + data.windowH);
@@ -120,7 +166,7 @@ void TasAmpApp::ReadyToRun()
         ConnectMusicAssistant(true);
 }
 
-bool TasAmpApp::QuitRequested()
+bool AmpApp::QuitRequested()
 {
     fScanner->Stop();
     fPlayer->Shutdown();
@@ -130,7 +176,7 @@ bool TasAmpApp::QuitRequested()
     return BApplication::QuitRequested();
 }
 
-void TasAmpApp::MessageReceived(BMessage* message)
+void AmpApp::MessageReceived(BMessage* message)
 {
     switch (message->what) {
         case kMsgSettingsChanged:
@@ -153,7 +199,7 @@ void TasAmpApp::MessageReceived(BMessage* message)
     }
 }
 
-void TasAmpApp::RefsReceived(BMessage* message)
+void AmpApp::RefsReceived(BMessage* message)
 {
     // Files dropped on the app or opened from Tracker: play them directly.
     std::vector<Track> tracks;
@@ -170,7 +216,7 @@ void TasAmpApp::RefsReceived(BMessage* message)
     fPlayer->PlayTracks(ids, 0);
 }
 
-void TasAmpApp::ArgvReceived(int32 argc, char** argv)
+void AmpApp::ArgvReceived(int32 argc, char** argv)
 {
     BMessage refs(B_REFS_RECEIVED);
     for (int32 i = 1; i < argc; i++) {
@@ -182,7 +228,7 @@ void TasAmpApp::ArgvReceived(int32 argc, char** argv)
         RefsReceived(&refs);
 }
 
-void TasAmpApp::StartScan()
+void AmpApp::StartScan()
 {
     SettingsData data = fSettings->Get();
     if (data.libraryFolders.empty()) {
@@ -196,7 +242,7 @@ void TasAmpApp::StartScan()
     fScanner->Start(data.libraryFolders, force);
 }
 
-void TasAmpApp::ApplySettingsChanged()
+void AmpApp::ApplySettingsChanged()
 {
     SettingsData data = fSettings->Get();
     fMA->Configure(data.maHost, data.maPort, data.maUsername, data.maPassword, data.maToken);
@@ -209,7 +255,7 @@ void TasAmpApp::ApplySettingsChanged()
         BMessenger(fWindow).SendMessage(kMsgLibraryChanged);
 }
 
-void TasAmpApp::ConnectMusicAssistant(bool resync)
+void AmpApp::ConnectMusicAssistant(bool resync)
 {
     if (fMASyncRunning)
         return;
@@ -217,7 +263,7 @@ void TasAmpApp::ConnectMusicAssistant(bool resync)
     std::thread([this, resync] { MAConnectWorker(resync); }).detach();
 }
 
-void TasAmpApp::MAConnectWorker(bool resync)
+void AmpApp::MAConnectWorker(bool resync)
 {
     auto status = [this](bool connected, const std::string& text) {
         BMessage message(kMsgMAStatus);
@@ -256,7 +302,7 @@ void TasAmpApp::MAConnectWorker(bool resync)
     fMASyncRunning = false;
 }
 
-void TasAmpApp::DisconnectMusicAssistant()
+void AmpApp::DisconnectMusicAssistant()
 {
     fPlayer->DisableMusicAssistant();
     fMAConnected = false;
@@ -267,7 +313,7 @@ void TasAmpApp::DisconnectMusicAssistant()
         BMessenger(fWindow).SendMessage(&message);
 }
 
-void TasAmpApp::SyncPlaylistToMA(int64_t playlistId)
+void AmpApp::SyncPlaylistToMA(int64_t playlistId)
 {
     {
         std::lock_guard<std::mutex> lock(fMutex);
@@ -293,7 +339,7 @@ void TasAmpApp::SyncPlaylistToMA(int64_t playlistId)
     }).detach();
 }
 
-bool TasAmpApp::LoadMAPlaylist(int64_t playlistId)
+bool AmpApp::LoadMAPlaylist(int64_t playlistId)
 {
     std::string itemId, name;
     {
@@ -348,7 +394,7 @@ bool TasAmpApp::LoadMAPlaylist(int64_t playlistId)
     return true;
 }
 
-void TasAmpApp::PlaylistSyncWorker(int64_t playlistId)
+void AmpApp::PlaylistSyncWorker(int64_t playlistId)
 {
     auto status = [this](const std::string& text) {
         BMessage message(kMsgScanProgress);
@@ -407,4 +453,4 @@ void TasAmpApp::PlaylistSyncWorker(int64_t playlistId)
         + (skipped ? ", " + std::to_string(skipped) + " local tracks skipped)" : ")"));
 }
 
-} // namespace tasamp
+} // namespace amp

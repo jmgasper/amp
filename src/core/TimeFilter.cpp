@@ -1,7 +1,7 @@
 #include "TimeFilter.h"
 #include <cmath>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 const double kAdaptiveForgettingCutoff = 3.0;
@@ -104,4 +104,4 @@ int64_t TimeFilter::ComputeClientTime(int64_t serverTime) const
     return serverTime - (int64_t)std::llround(offset);
 }
 
-} // namespace tasamp
+} // namespace amp

@@ -6,7 +6,7 @@
 #include <ctime>
 #include <sqlite3.h>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 
@@ -909,4 +909,4 @@ bool Library::LinkPlaylistToMA(int64_t id, const std::string& maItemId, const st
     return true;
 }
 
-} // namespace tasamp
+} // namespace amp

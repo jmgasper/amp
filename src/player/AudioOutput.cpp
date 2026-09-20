@@ -2,7 +2,7 @@
 #include <cstring>
 #include <cmath>
 
-namespace tasamp {
+namespace amp {
 
 AudioOutput::AudioOutput() {}
 
@@ -22,7 +22,7 @@ bool AudioOutput::Open(int sampleRate)
     format.format = media_raw_audio_format::B_AUDIO_FLOAT;
     format.byte_order = B_MEDIA_HOST_ENDIAN;
     format.buffer_size = 2048 * sizeof(float) * 2; // 2048 frames per buffer
-    fPlayer = new BSoundPlayer(&format, "TasAmp", PlayBuffer, nullptr, this);
+    fPlayer = new BSoundPlayer(&format, "Amp", PlayBuffer, nullptr, this);
     if (fPlayer->InitCheck() != B_OK) {
         delete fPlayer;
         fPlayer = nullptr;
@@ -166,4 +166,4 @@ void AudioOutput::Fill(float* out, size_t frames)
     fSpace.notify_all();
 }
 
-} // namespace tasamp
+} // namespace amp

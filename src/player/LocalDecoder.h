@@ -10,7 +10,7 @@
 class BMediaFile;
 class BMediaTrack;
 
-namespace tasamp {
+namespace amp {
 
 class LocalDecoder {
 public:
@@ -49,4 +49,4 @@ private:
     std::atomic<int64_t> fConsumedAtBase{0};
 };
 
-} // namespace tasamp
+} // namespace amp

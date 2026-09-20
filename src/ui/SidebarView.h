@@ -4,7 +4,7 @@
 #include <View.h>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 struct SidebarPlaylist {
     int64_t id;
@@ -54,4 +54,4 @@ private:
     float fContentHeight = 0;
 };
 
-} // namespace tasamp
+} // namespace amp

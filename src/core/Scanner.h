@@ -7,7 +7,7 @@
 #include <thread>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 class Library;
 class ImageCache;
@@ -42,4 +42,4 @@ private:
     std::atomic<bool> fStop{false};
 };
 
-} // namespace tasamp
+} // namespace amp

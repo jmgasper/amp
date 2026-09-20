@@ -1,4 +1,4 @@
-// TasAmp's main window: toolbar, sidebar, content views and status bar in the iTunes 8 layout.
+// Amp's main window: toolbar, sidebar, content views and status bar in the iTunes 8 layout.
 #pragma once
 #include "AlbumGridView.h"
 #include "ArtistsView.h"
@@ -14,7 +14,7 @@
 #include <set>
 #include <string>
 
-namespace tasamp {
+namespace amp {
 
 class MainWindow : public BWindow {
 public:
@@ -67,4 +67,4 @@ private:
     BString QualityFor(int64_t trackId, int streamQuality);
 };
 
-} // namespace tasamp
+} // namespace amp

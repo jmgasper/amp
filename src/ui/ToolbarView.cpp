@@ -1,5 +1,6 @@
 #include "ToolbarView.h"
 #include "App.h"
+#include "Icons.h"
 #include "Theme.h"
 #include "core/Model.h"
 #include <Bitmap.h>
@@ -10,7 +11,7 @@
 #include <Window.h>
 #include <cstdio>
 
-namespace tasamp {
+namespace amp {
 
 ToolbarView::ToolbarView()
     : BView("toolbar", B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE)
@@ -134,51 +135,25 @@ void ToolbarView::DrawRoundButton(BRect rect, Hot which)
     SetHighColor(118, 118, 118);
     SetPenSize(1);
     StrokeEllipse(rect);
-    // glyph
-    SetHighColor(60, 60, 60);
-    float cx = (rect.left + rect.right) / 2;
-    float cy = (rect.top + rect.bottom) / 2;
-    float s = rect.Width() * 0.17f;
-    if (which == kPlay) {
-        if (fState == kPlaying) {
-            FillRect(BRect(cx - s - 1, cy - s - 1, cx - 1.5f, cy + s));
-            FillRect(BRect(cx + 1.5f, cy - s - 1, cx + s + 1, cy + s));
-        } else {
-            BPoint tri[3] = {BPoint(cx - s + 1, cy - s - 1), BPoint(cx + s + 2, cy), BPoint(cx - s + 1, cy + s + 1)};
-            FillPolygon(tri, 3);
-        }
-    } else if (which == kPrev) {
-        FillRect(BRect(cx - s - 1, cy - s, cx - s, cy + s));
-        BPoint tri[3] = {BPoint(cx + 0.5f, cy - s), BPoint(cx - s, cy), BPoint(cx + 0.5f, cy + s)};
-        FillPolygon(tri, 3);
-        BPoint tri2[3] = {BPoint(cx + s + 1.5f, cy - s), BPoint(cx + 1, cy), BPoint(cx + s + 1.5f, cy + s)};
-        FillPolygon(tri2, 3);
-    } else if (which == kNext) {
-        FillRect(BRect(cx + s, cy - s, cx + s + 1, cy + s));
-        BPoint tri[3] = {BPoint(cx - 0.5f, cy - s), BPoint(cx + s, cy), BPoint(cx - 0.5f, cy + s)};
-        FillPolygon(tri, 3);
-        BPoint tri2[3] = {BPoint(cx - s - 1.5f, cy - s), BPoint(cx - 1, cy), BPoint(cx - s - 1.5f, cy + s)};
-        FillPolygon(tri2, 3);
-    }
+    // glyph: Font Awesome, centred on its ink
+    icons::Icon glyph = icons::kNext;
+    if (which == kPlay)
+        glyph = fState == kPlaying ? icons::kPause : icons::kPlay;
+    else if (which == kPrev)
+        glyph = icons::kPrevious;
+    // the play circle is larger than the two step buttons: keep the ink at the
+    // same fraction of each circle so the three glyphs look equally weighted
+    float size = rect.Height() * (which == kPlay ? 0.42f : 0.50f);
+    icons::Draw(this, glyph, rect, size, Rgb(60, 60, 60));
 }
 
 void ToolbarView::DrawVolume()
 {
     BRect r = fVolumeRect;
     float cy = (r.top + r.bottom) / 2;
-    // small and large speaker glyphs
-    auto speaker = [&](BPoint origin, float scale) {
-        SetHighColor(90, 90, 90);
-        FillRect(BRect(origin.x, cy - 2 * scale, origin.x + 2 * scale, cy + 2 * scale));
-        BPoint cone[4] = {BPoint(origin.x + 2 * scale, cy - 2 * scale), BPoint(origin.x + 5 * scale, cy - 5 * scale),
-            BPoint(origin.x + 5 * scale, cy + 5 * scale), BPoint(origin.x + 2 * scale, cy + 2 * scale)};
-        FillPolygon(cone, 4);
-    };
-    speaker(BPoint(r.left - 12, 0), 0.8f);
-    speaker(BPoint(r.right + 6, 0), 1.2f);
-    SetHighColor(120, 120, 120);
-    StrokeArc(BPoint(r.right + 13, cy), 4, 4, -50, 100);
-    StrokeArc(BPoint(r.right + 13, cy), 7, 7, -50, 100);
+    // a speaker either side of the slider: the far one carries the "louder" idea
+    icons::Draw(this, icons::kVolume, BRect(r.left - 26, cy - 8, r.left - 6, cy + 8), 11, Rgb(90, 90, 90));
+    icons::Draw(this, icons::kVolume, BRect(r.right + 4, cy - 9, r.right + 28, cy + 9), 13, Rgb(90, 90, 90));
     // track
     BRect track(r.left, cy - 2, r.right, cy + 2);
     SetHighColor(0, 0, 0, 50);
@@ -267,13 +242,13 @@ void ToolbarView::DrawLcd()
     BFont plain(be_plain_font);
     plain.SetSize(11);
     if (fState == kStopped || fTitle.IsEmpty()) {
-        // idle: the TasAmp mark
-        BRect note(r.left + r.Width() / 2 - 30, r.top + 13, r.left + r.Width() / 2 - 10, r.top + 39);
-        DrawNoteIcon(this, note, theme::kLcdSecondary);
+        // idle: the Amp mark
+        float cx = r.left + r.Width() / 2;
+        icons::Draw(this, icons::kMusic, BRect(cx - 40, r.top + 12, cx - 12, r.top + 40), 20, theme::kLcdSecondary);
         bold.SetSize(17);
         SetFont(&bold);
         SetHighColor(theme::kLcdSecondary);
-        DrawString("TasAmp", BPoint(r.left + r.Width() / 2 - 6, r.top + 33));
+        DrawString("Amp", BPoint(cx - 6, r.top + 33));
         return;
     }
     // artwork of the playing track
@@ -338,21 +313,8 @@ void ToolbarView::DrawViewButtons()
             FillVerticalGradient(this, cell, Rgb(250, 250, 250), Rgb(205, 205, 205));
         SetHighColor(110, 110, 110);
         StrokeRect(cell);
-        SetHighColor(active ? Rgb(255, 255, 255) : Rgb(70, 70, 70));
-        float cx = (cell.left + cell.right) / 2;
-        float cy = (cell.top + cell.bottom) / 2;
-        if (i == 0) {
-            for (int line = -1; line <= 1; line++)
-                FillRect(BRect(cx - 7, cy + line * 4 - 1, cx + 7, cy + line * 4));
-        } else if (i == 1) {
-            FillRect(BRect(cx - 8, cy - 5, cx - 2, cy + 5));
-            for (int line = -1; line <= 1; line++)
-                FillRect(BRect(cx, cy + line * 4 - 1, cx + 8, cy + line * 4));
-        } else {
-            for (int gx = -1; gx <= 0; gx++)
-                for (int gy = -1; gy <= 0; gy++)
-                    FillRect(BRect(cx + gx * 8 + 1, cy + gy * 8 + 1, cx + gx * 8 + 6, cy + gy * 8 + 6));
-        }
+        icons::Icon glyph = i == 0 ? icons::kList : (i == 1 ? icons::kAlbumList : icons::kGrid);
+        icons::Draw(this, glyph, cell, cell.Height() * 0.55f, active ? Rgb(255, 255, 255) : Rgb(70, 70, 70));
     }
     BFont small(be_plain_font);
     small.SetSize(9);
@@ -484,4 +446,4 @@ void ToolbarView::MouseUp(BPoint where)
     Invalidate();
 }
 
-} // namespace tasamp
+} // namespace amp

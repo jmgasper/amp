@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 
@@ -384,4 +384,4 @@ int64_t ImageCache::CacheSizeBytes()
     return total;
 }
 
-} // namespace tasamp
+} // namespace amp

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""QMP input/screenshot helper for TasAmp's isolated Haiku test VM."""
+"""QMP input/screenshot helper for Amp's isolated Haiku test VM."""
 import argparse
 import json
 import pathlib

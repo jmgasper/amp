@@ -12,7 +12,7 @@
 #include <TabView.h>
 #include <thread>
 
-namespace tasamp {
+namespace amp {
 
 namespace {
 enum {
@@ -36,7 +36,7 @@ const char* SourceTitle(const std::string& id)
 }
 
 SettingsWindow::SettingsWindow(BWindow* parent)
-    : BWindow(BRect(0, 0, 560, 480), "TasAmp Settings", B_TITLED_WINDOW,
+    : BWindow(BRect(0, 0, 560, 480), "Amp Settings", B_TITLED_WINDOW,
         B_NOT_ZOOMABLE | B_AUTO_UPDATE_SIZE_LIMITS | B_CLOSE_ON_ESCAPE)
 {
     fData = App()->GetSettings().Get();
@@ -69,7 +69,7 @@ SettingsWindow::SettingsWindow(BWindow* parent)
     fMAUser = new BTextControl("user", "Username:", "", nullptr);
     fMAPassword = new BTextControl("password", "Password:", "", nullptr);
     fMAPassword->TextView()->HideTyping(true);
-    fMAPlayerName = new BTextControl("player", "Player name:", "TasAmp", nullptr);
+    fMAPlayerName = new BTextControl("player", "Player name:", "Amp", nullptr);
     fMAStatus = new BStringView("status", "");
     fTestButton = new BButton("test", "Test Connection", new BMessage(kMsgTest));
     BButton* syncNow = new BButton("sync", "Sync Library Now", new BMessage(kMsgSyncNow));
@@ -90,7 +90,7 @@ SettingsWindow::SettingsWindow(BWindow* parent)
             .Add(fMAPlayerName->CreateLabelLayoutItem(), 0, 4)
             .Add(fMAPlayerName->CreateTextViewLayoutItem(), 1, 4)
         .End()
-        .Add(new BStringView("hint", "TasAmp logs in with the built-in username/password provider and registers "
+        .Add(new BStringView("hint", "Amp logs in with the built-in username/password provider and registers "
             "itself as a player named as above, so Music Assistant streams to this computer."))
         .AddGroup(B_HORIZONTAL)
             .Add(fTestButton)
@@ -227,7 +227,7 @@ void SettingsWindow::Apply()
     fData.maPassword = password;
     fData.maPlayerName = fMAPlayerName->Text();
     if (fData.maPlayerName.empty())
-        fData.maPlayerName = "TasAmp";
+        fData.maPlayerName = "Amp";
     fData.fetchOnlineArt = fOnlineArt->Value() == B_CONTROL_ON;
     for (ArtSource& s : fData.artSources) {
         if (s.id == "theaudiodb") {
@@ -357,4 +357,4 @@ void SettingsWindow::MessageReceived(BMessage* message)
     }
 }
 
-} // namespace tasamp
+} // namespace amp

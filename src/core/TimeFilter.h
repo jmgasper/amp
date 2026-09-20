@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <mutex>
 
-namespace tasamp {
+namespace amp {
 
 class TimeFilter {
 public:
@@ -40,4 +40,4 @@ private:
     mutable std::mutex fMutex;
 };
 
-} // namespace tasamp
+} // namespace amp

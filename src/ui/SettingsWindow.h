@@ -10,7 +10,7 @@
 #include <Window.h>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 class SettingsWindow : public BWindow {
 public:
@@ -44,4 +44,4 @@ private:
     BButton* fTestButton;
 };
 
-} // namespace tasamp
+} // namespace amp

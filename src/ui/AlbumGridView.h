@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 // One cover in the grid. Cells describe themselves so the grid can show library albums as
 // well as the albums found inside a playlist (whose tracks may not be library items).
@@ -46,4 +46,4 @@ private:
     bool fMaybeDrag = false;
 };
 
-} // namespace tasamp
+} // namespace amp

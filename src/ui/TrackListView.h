@@ -10,13 +10,20 @@
 #include <string>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
+
+class TrackHeaderView;
 
 class TrackListView : public BView {
 public:
     enum Mode { kPlain = 0, kGrouped = 1 };
 
     TrackListView(const char* name = "tracklist");
+
+    // The column header is its own view, placed above the scroll view: it is
+    // painted once and stays put while the rows scroll. The returned view is
+    // owned by the list.
+    TrackHeaderView* HeaderView();
 
     // positions: the playlist position of every row when the rows are a filtered subset of an
     // editable playlist (empty = rows are the playlist itself, which also allows reordering).
@@ -49,6 +56,8 @@ public:
     void MakeFocus(bool focus) override;
 
 private:
+    friend class TrackHeaderView;
+
     struct Column {
         const char* title;
         float width;
@@ -77,7 +86,11 @@ private:
     float RowsLeft() const;
     void LayoutColumns();
     int ColumnAt(float x, float* leftOut) const;
-    void DrawHeader(BRect bounds);
+    void DrawHeader(BView* target, BRect bounds);
+    void InvalidateHeader();
+    void HeaderMouseDown(BPoint where, BView* target);
+    void HeaderMouseMoved(BPoint where);
+    void HeaderMouseUp();
     void DrawRow(int row, BRect rect, bool selected, bool active);
     void DrawGroup(const Group& group, BRect rect);
     void SortTracks();
@@ -120,6 +133,23 @@ private:
     BMessageRunner* fLoadingRunner = nullptr;
     BRect LoadingBarRect() const;
     void DrawLoading(BRect bounds);
+
+    TrackHeaderView* fHeaderView = nullptr;
 };
 
-} // namespace tasamp
+// The fixed column header above a TrackListView's scroll view.
+class TrackHeaderView : public BView {
+public:
+    explicit TrackHeaderView(TrackListView* list, const char* name = "trackheader");
+    ~TrackHeaderView() override;
+
+    void Draw(BRect updateRect) override;
+    void MouseDown(BPoint where) override;
+    void MouseMoved(BPoint where, uint32 transit, const BMessage* drag) override;
+    void MouseUp(BPoint where) override;
+
+private:
+    TrackListView* fList;
+};
+
+} // namespace amp

@@ -6,7 +6,7 @@
 #include <random>
 #include <sstream>
 
-namespace tasamp {
+namespace amp {
 
 Settings::Settings(const std::string& path)
     : fPath(path)
@@ -43,7 +43,7 @@ bool Settings::Load()
     d.maPassword = ma.value("password", "");
     d.maToken = ma.value("token", "");
     d.maPlayerId = ma.value("playerId", "");
-    d.maPlayerName = ma.value("playerName", "TasAmp");
+    d.maPlayerName = ma.value("playerName", "Amp");
     Json art = j.value("artwork", Json::object());
     d.fetchOnlineArt = art.value("fetchOnline", true);
     for (auto& s : art.value("sources", Json::array())) {
@@ -134,10 +134,10 @@ std::string GenerateClientId()
     static const char alphabet[] = "abcdefghijklmnopqrstuvwxyz0123456789";
     std::mt19937_64 rng((uint64_t)std::chrono::steady_clock::now().time_since_epoch().count()
         ^ (uint64_t)std::random_device{}());
-    std::string id = "tasamp-";
+    std::string id = "amp-";
     for (int i = 0; i < 16; i++)
         id.push_back(alphabet[rng() % (sizeof(alphabet) - 1)]);
     return id;
 }
 
-} // namespace tasamp
+} // namespace amp

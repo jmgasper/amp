@@ -1,6 +1,6 @@
 // Sendspin "player@v1" client speaking the unencrypted transition-mode protocol that
 // Music Assistant 2.10 accepts through its authenticated /sendspin WebSocket proxy.
-// TasAmp registers itself as a player so the server streams PCM audio to it.
+// Amp registers itself as a player so the server streams PCM audio to it.
 #pragma once
 #include "TimeFilter.h"
 #include "WebSocket.h"
@@ -13,7 +13,7 @@
 #include <string>
 #include <thread>
 
-namespace tasamp {
+namespace amp {
 
 struct SendspinFormat {
     std::string codec = "pcm";
@@ -85,4 +85,4 @@ private:
     std::mutex fMutex;
 };
 
-} // namespace tasamp
+} // namespace amp

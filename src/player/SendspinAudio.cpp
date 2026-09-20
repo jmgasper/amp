@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace tasamp {
+namespace amp {
 
 SendspinAudio::SendspinAudio(AudioOutput& output)
     : fOutput(output)
@@ -234,4 +234,4 @@ void SendspinAudio::Run()
     }
 }
 
-} // namespace tasamp
+} // namespace amp

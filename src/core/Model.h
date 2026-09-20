@@ -1,10 +1,10 @@
-// TasAmp library data model: plain structs shared by the store, the UI and the player.
+// Amp library data model: plain structs shared by the store, the UI and the player.
 #pragma once
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace tasamp {
+namespace amp {
 
 enum class Source { Local = 0, MusicAssistant = 1 };
 
@@ -108,4 +108,4 @@ std::string SortKeyFor(const std::string& name); // strips "The ", lowercases
 std::string ToLower(const std::string& text);
 bool ContainsNoCase(const std::string& haystack, const std::string& needle);
 
-} // namespace tasamp
+} // namespace amp

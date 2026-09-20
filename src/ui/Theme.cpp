@@ -1,10 +1,11 @@
 #include "Theme.h"
+#include "Icons.h"
 #include <Bitmap.h>
 #include <Font.h>
 #include <GradientLinear.h>
 #include <Shape.h>
 
-namespace tasamp {
+namespace amp {
 
 rgb_color Blend(rgb_color a, rgb_color b, float amount)
 {
@@ -55,16 +56,8 @@ void DrawMABadge(BView* view, BPoint leftTop, float height)
 
 void DrawNoteIcon(BView* view, BRect rect, rgb_color color)
 {
-    // a simple eighth note that scales with the rect
-    float w = rect.Width();
-    float h = rect.Height();
-    view->SetHighColor(color);
-    view->SetPenSize(w * 0.09f);
-    BRect head(rect.left + w * 0.18f, rect.top + h * 0.62f, rect.left + w * 0.52f, rect.top + h * 0.88f);
-    view->FillEllipse(head);
-    view->StrokeLine(BPoint(head.right - w * 0.04f, head.top + h * 0.12f), BPoint(head.right - w * 0.04f, rect.top + h * 0.12f));
-    view->StrokeLine(BPoint(head.right - w * 0.04f, rect.top + h * 0.12f), BPoint(rect.left + w * 0.82f, rect.top + h * 0.30f));
-    view->SetPenSize(1);
+    // the Font Awesome music note, centred in the rect
+    icons::DrawFitted(view, icons::kMusic, rect, color);
 }
 
 void DrawArtPlaceholder(BView* view, BRect rect)
@@ -119,4 +112,4 @@ void DrawTruncated(BView* view, const char* text, BRect rect, alignment align, f
     view->DrawString(truncated.String(), BPoint(x, y));
 }
 
-} // namespace tasamp
+} // namespace amp
