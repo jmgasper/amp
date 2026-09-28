@@ -827,7 +827,7 @@ void MainWindow::MessageReceived(BMessage* message)
             break;
         case kMsgAbout: {
             BAlert* alert = new BAlert("About Amp",
-                "Amp 0.2.0\n\nA native music player for Haiku with local libraries and Music Assistant streaming.\n"
+                "Amp 0.3.0\n\nA native music player for Haiku with local libraries, Music Assistant streaming and MiniDisc (NetMD) writing.\n"
                 "Icons from Font Awesome Free 6.7.2. Artwork from embedded tags, folder art, MusicBrainz/Cover Art Archive, TheAudioDB and Discogs.",
                 "OK");
             alert->Go(nullptr);

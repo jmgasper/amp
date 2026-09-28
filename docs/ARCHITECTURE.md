@@ -14,11 +14,19 @@ src/core     portable C++17 (no Haiku headers except in Scanner's TagLib use)
   Sendspin           Sendspin player@v1 client (transition mode through MA's /sendspin proxy)
   MusicAssistant     MA HTTP API client: login, library, playlists, player/queue commands
   Queue              play queue with shuffle/repeat
+  NetMD              MiniDisc recorder protocol: commands, secure download, title/capacity planning
+  NetMDSimulator     a recorder in software (tests, AMP_NETMD_SIMULATE)
+  Des                DES / two-key 3DES for NetMD
+  Resampler          windowed-sinc sample rate conversion
+  FlacDecoder, AlacDecoder   lossless packet decoders (Haiku's own drop the last frames)
 src/player   Haiku Media Kit
   AudioOutput        BSoundPlayer + ring buffer + volume
   LocalDecoder       BMediaFile/BMediaTrack decode thread
   SendspinAudio      schedules Sendspin PCM chunks into the output at their local play time
   Player             controller: queue, engine switching, MA player registration, progress
+  NetMDUsb           USB Kit transport and roster for NetMD recorders
+  MiniDiscPcm        any local file -> 44.1 kHz 16-bit big-endian PCM for SP recording
+  MiniDisc           MiniDiscManager: recorder state, write and erase jobs on one worker thread
 src/ui       Haiku Interface Kit
   App                BApplication: owns everything, background scan/sync jobs
   MainWindow         toolbar / sidebar / content cards / status bar
@@ -31,7 +39,11 @@ src/ui       Haiku Interface Kit
   Icons              Font Awesome glyphs: registers the bundled font, draws it centred
   SettingsWindow     Library / Music Assistant / Artwork tabs
   ArtStore           scaled BBitmap cache fed by ImageCache
+  MiniDiscView       the DEVICES source: disc summary, capacity bar, tracks and pending songs
+  MainWindowMiniDisc the write flow (questions, job) and its progress in the LCD and sidebar
 ```
+
+MiniDisc support is described in `MINIDISC.md`.
 
 The column header is deliberately *not* part of the scrolled table: `TrackHeaderView` is a
 sibling of the `BScrollView`, so scrolling blits only the rows while the header is painted once

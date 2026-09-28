@@ -26,6 +26,11 @@ server sends audio straight to the Haiku machine.
   "Add to Up Next". The display shows the playing track's artwork, title, artist and album,
   elapsed and remaining time, the MA badge for streamed tracks, and the source quality
   ("Lossless" or the bit rate).
+- MiniDisc: playlists, albums and selected songs can be written to a MiniDisc in a NetMD
+  recorder, in SP. The recorder appears under DEVICES with the disc's contents and a capacity
+  bar; the display shows iTunes-style progress with a cancel button. Amp asks before erasing
+  a disc that has songs (or adds after them) and offers to write the songs that fit when a
+  playlist is too long. See `docs/MINIDISC.md`.
 - Library folders, the Music Assistant server and account and the artwork sources live in one
   Settings window, opened from the **Settings** button at the bottom right of the main window
   or File > Settings….
@@ -42,7 +47,11 @@ make package        # artifacts/amp-<version>-x86_64.hpkg
 ```
 
 The development VM workflow (sync sources, build, screenshots) is described in
-`docs/VM.md`; the code layout in `docs/ARCHITECTURE.md`.
+`docs/VM.md`; the code layout in `docs/ARCHITECTURE.md`; MiniDisc writing, its tools and
+tests in `docs/MINIDISC.md`. `make check` runs the core unit tests and `make mdtool` builds a
+command-line NetMD tool. `tools/ws.sh` and `tools/ws-build.sh` do for the owner's
+workstation (a bare-metal Haiku machine with the test recorder) what `tools/haiku.sh` and
+`tools/sync-build.sh` do for the VM.
 
 ## Music Assistant notes
 

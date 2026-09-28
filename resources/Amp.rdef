@@ -5,11 +5,11 @@ resource vector_icon {
 };
 resource app_version {
     major = 0,
-    middle = 2,
+    middle = 3,
     minor = 0,
     variety = B_APPV_ALPHA,
     internal = 0,
-    short_info = "Amp 0.2.0 alpha — music player",
+    short_info = "Amp 0.3.0 alpha — music player",
     long_info = "A native Haiku music player for local libraries and Music Assistant, styled after iTunes 8."
 };
 resource file_types message {
