@@ -29,6 +29,7 @@ enum Icon {
     kClose,
     kCheck,
     kWarning,
+    kLock,
 };
 
 // Makes the Font Awesome font available (copying it into the user font

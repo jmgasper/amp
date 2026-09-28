@@ -387,6 +387,19 @@ void RunJob(Shared& shared, netmd::Device& device, MiniDiscJob& job)
     } catch (const netmd::Error& e) {
         error = DescribeError(e);
         netmd::Recover(device);
+        if (e.kind() == netmd::Error::kRejected) {
+            // the usual reasons, which the recorder does not name
+            try {
+                netmd::DiscInfo now = device.ReadDiscInfo();
+                if (!now.present)
+                    error = "The MiniDisc was taken out of the recorder.";
+                else if (now.writeProtected)
+                    error = "The MiniDisc is write-protected. Slide its record tab closed and try again.";
+                else if (now.leftFrames < netmd::kFramesPerSecond * 2)
+                    error = "The MiniDisc is full.";
+            } catch (const netmd::Error&) {
+            }
+        }
     }
     conversions.reset();
 
@@ -475,6 +488,7 @@ void Worker(std::shared_ptr<Shared> shared)
 {
     WorkerTransport transport;
     std::string openPath;
+    bool measured = false;
     while (true) {
         std::unique_ptr<MiniDiscJob> job;
         bool erase, contents, present;
@@ -515,6 +529,7 @@ void Worker(std::shared_ptr<Shared> shared)
             transport.Close();
             if (transport.Open(device.path, error)) {
                 openPath = device.path;
+                measured = false;
                 try {
                     netmd::Device(transport.Get()).Flush();
                 } catch (const netmd::Error&) {
@@ -544,8 +559,26 @@ void Worker(std::shared_ptr<Shared> shared)
         } else if (erase) {
             RunErase(*shared, md);
             ReadState(*shared, md, true);
-        } else
+        } else {
             ReadState(*shared, md, contents);
+            // how fast the port is, once the recorder has settled with its disc
+            if (!measured && openPath != kSimulatorPath) {
+                double latency = 0;
+                try {
+                    latency = md.MeasureLatency(30);
+                    measured = true;
+                } catch (const netmd::Error&) {
+                }
+                bool slow = latency > netmd::kSlowLatencyMs;
+                {
+                    std::lock_guard<std::mutex> guard(shared->lock);
+                    shared->state.latencyMs = latency;
+                    std::swap(shared->state.slowPort, slow);
+                }
+                if (slow != (latency > netmd::kSlowLatencyMs))
+                    shared->PostState();
+            }
+        }
     }
 }
 

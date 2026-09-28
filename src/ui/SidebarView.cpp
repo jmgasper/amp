@@ -32,8 +32,9 @@ void SidebarView::SetPlaylists(const std::vector<SidebarPlaylist>& playlists)
     Invalidate();
 }
 
-void SidebarView::SetMiniDisc(bool connected, const BString& label, bool busy, float fraction)
+void SidebarView::SetMiniDisc(bool connected, const BString& label, bool busy, float fraction, bool locked)
 {
+    fMiniDiscLocked = locked;
     bool rebuild = connected != fMiniDiscConnected || label != fMiniDiscLabel;
     fMiniDiscConnected = connected;
     fMiniDiscLabel = label;
@@ -202,6 +203,10 @@ void SidebarView::Draw(BRect updateRect)
             DrawProgressPie(this, pie, std::max(0.0f, fMiniDiscFraction),
                 selected ? theme::kSelectedText : theme::kSidebarSelectionBottom);
             right = pie.left - 4;
+        } else if (item.source == "minidisc" && fMiniDiscLocked) {
+            BRect lock(rect.right - 18, rect.top + 3, rect.right - 6, rect.top + 16);
+            icons::Draw(this, icons::kLock, lock, 10, selected ? theme::kSelectedText : theme::kSidebarHeader);
+            right = lock.left - 4;
         }
         if (item.source == "playlist" && (item.isMA || item.synced)) {
             float badgeWidth = 24;

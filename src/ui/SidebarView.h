@@ -19,7 +19,8 @@ public:
     void SetPlaylists(const std::vector<SidebarPlaylist>& playlists);
     // The DEVICES section: shown while a MiniDisc recorder is connected. A fraction of zero
     // or more draws the progress pie of a running write.
-    void SetMiniDisc(bool connected, const BString& label, bool busy, float fraction);
+    // `locked`: the disc is write-protected (a lock is drawn).
+    void SetMiniDisc(bool connected, const BString& label, bool busy, float fraction, bool locked = false);
     void Select(const char* source, int64_t playlistId);
     const char* SelectedSource() const { return fSelectedSource.String(); }
     int64_t SelectedPlaylist() const { return fSelectedPlaylist; }
@@ -52,6 +53,7 @@ private:
     std::vector<SidebarPlaylist> fPlaylists;
     bool fMiniDiscConnected = false;
     bool fMiniDiscBusy = false;
+    bool fMiniDiscLocked = false;
     float fMiniDiscFraction = -1;
     BString fMiniDiscLabel;
     std::vector<Item> fItems;

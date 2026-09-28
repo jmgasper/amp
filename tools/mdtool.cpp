@@ -52,7 +52,7 @@ static void PrintInfo(const netmd::DiscInfo& info)
 int main(int argc, char** argv)
 {
     if (argc < 2) {
-        fprintf(stderr, "usage: mdtool info|list|erase|title <text>|write <file> [title]|pcm <file> <out>\n");
+        fprintf(stderr, "usage: mdtool info|list|latency|erase|title <text>|write <file> [title]|pcm <file> <out>\n");
         return 2;
     }
     const char* command = argv[1];
@@ -89,7 +89,11 @@ int main(int argc, char** argv)
         };
     try {
         device.Flush();
-        if (!strcmp(command, "info") || !strcmp(command, "list")) {
+        if (!strcmp(command, "latency")) {
+            double latency = device.MeasureLatency(100);
+            printf("control transfer: %.3f ms average%s\n", latency,
+                latency > netmd::kSlowLatencyMs ? " (too slow for SP recording)" : "");
+        } else if (!strcmp(command, "info") || !strcmp(command, "list")) {
             auto start = std::chrono::steady_clock::now();
             netmd::DiscInfo info = device.ReadDiscInfo();
             if (!strcmp(command, "list"))

@@ -21,6 +21,8 @@ struct MiniDiscState {
     netmd::DiscInfo disc;
     bool busy = false;             // a write or erase is running
     std::string error;             // why the recorder cannot be used, if it cannot
+    double latencyMs = 0;          // measured control transfer time
+    bool slowPort = false;         // too slow to feed an SP recording (see netmd::kSlowLatencyMs)
 };
 
 struct MiniDiscWriteItem {

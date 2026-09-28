@@ -45,6 +45,7 @@ const char* const kGlyphs[] = {
     "\xef\x80\x8d", // kClose       U+F00D xmark
     "\xef\x80\x8c", // kCheck       U+F00C check
     "\xef\x81\xb1", // kWarning     U+F071 triangle-exclamation
+    "\xef\x80\xa3", // kLock        U+F023 lock
 };
 
 int fState = 0; // 0 unknown, 1 ready, -1 unavailable
@@ -115,7 +116,7 @@ void Draw(BView* view, Icon icon, BRect rect, float size, rgb_color color)
 {
     if (view == nullptr || !Init())
         return;
-    if (icon < kPlay || icon > kWarning)
+    if (icon < kPlay || icon > kLock)
         return;
 
     BFont font;

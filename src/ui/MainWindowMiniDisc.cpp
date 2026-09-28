@@ -44,7 +44,8 @@ void MainWindow::MiniDiscChanged()
     BString label = "MiniDisc";
     if (state.known && state.disc.present && !state.disc.title.empty())
         label = state.disc.title.c_str();
-    fSidebar->SetMiniDisc(state.connected, label, state.busy, state.busy ? std::max(0.0f, fMDFraction) : -1);
+    bool locked = state.known && state.disc.present && state.disc.writeProtected;
+    fSidebar->SetMiniDisc(state.connected, label, state.busy, state.busy ? std::max(0.0f, fMDFraction) : -1, locked);
     fMiniDiscView->SetState(state);
     if (fSource == "minidisc") {
         if (!state.connected && !state.busy) {
@@ -94,12 +95,27 @@ void MainWindow::StartMiniDiscWrite(BMessage* request)
         return;
     }
     if (disc.writeProtected) {
-        Inform("MiniDisc", "The MiniDisc is write-protected.\n\nSlide the record tab on the disc closed and try again.", B_WARNING_ALERT);
+        Inform("MiniDisc Write-Protected", "The MiniDisc in the recorder is write-protected, so nothing can be recorded on it.\n\n"
+            "Take the disc out, slide the record tab on its edge so the hole is closed, and put it back.", B_WARNING_ALERT);
         return;
     }
     if (!disc.writable) {
         Inform("MiniDisc", "This MiniDisc cannot be recorded on.", B_WARNING_ALERT);
         return;
+    }
+
+    if (state.slowPort) {
+        BString text;
+        text << "The MiniDisc recorder is on a USB port that is too slow for recording: each USB transfer there takes "
+             << BString().SetToFormat("%.1f", state.latencyMs) << " ms, where it should take a fraction of one.\n\n"
+             << "The recorder would run out of audio after a few seconds, stop and disconnect. Plug it into another "
+             << "USB port and try again.";
+        BAlert* alert = new BAlert("USB Port Too Slow", text.String(), "Cancel", "Try Anyway", nullptr,
+            B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+        alert->SetShortcut(0, B_ESCAPE);
+        alert->SetDefaultButton(alert->ButtonAt(0));
+        if (alert->Go() != 1)
+            return;
     }
 
     // 1. what to write: the message's songs, a playlist, or what the window shows

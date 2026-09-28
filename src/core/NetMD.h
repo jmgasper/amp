@@ -85,6 +85,7 @@ enum DiscFormat { kDiscLP4 = 0, kDiscLP2 = 2, kDiscSPMono = 4, kDiscSPStereo = 6
 enum Encoding { kEncodingSP = 0x90, kEncodingLP2 = 0x92, kEncodingLP4 = 0x93 };
 enum WireFormat { kWirePCM = 0x00 };
 const size_t kPcmFrameSize = 2048;          // one "frame" of the PCM wire format
+const double kSlowLatencyMs = 2.5;          // above this, SP uploads cannot keep up
 const int kPcmBytesPerSecond = 44100 * 4;   // 16-bit big-endian stereo at 44.1 kHz
 
 struct TrackInfo {
@@ -114,6 +115,10 @@ public:
 
     // Reads and drops a reply a previous session may have left behind.
     void Flush();
+    // Median time of a minimal control transfer, in milliseconds. Through a controller that
+    // waits for a 1 ms frame per USB transaction it takes three or more, and such a port cannot
+    // feed an SP recording in real time; elsewhere it takes about one or less.
+    double MeasureLatency(int rounds = 20);
     // Sends one command (the status byte is added here) and returns the reply without its
     // status byte. Interim replies are waited out unless `acceptInterim`.
     Bytes Command(const Query& query, bool acceptInterim = false, int timeoutMs = 30000);

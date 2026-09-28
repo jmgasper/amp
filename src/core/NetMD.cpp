@@ -253,6 +253,20 @@ Bytes Device::ReadReply(int timeoutMs)
     return reply;
 }
 
+double Device::MeasureLatency(int rounds)
+{
+    ReplyLength(); // the first transfer may include waking the device up
+    std::vector<double> times;
+    for (int i = 0; i < rounds; i++) {
+        auto start = std::chrono::steady_clock::now();
+        ReplyLength();
+        times.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }
+    // the median: a recorder busy with its disc slows single transfers down
+    std::sort(times.begin(), times.end());
+    return times.empty() ? 0 : times[times.size() / 2];
+}
+
 void Device::Flush()
 {
     if (ReplyLength() > 0)

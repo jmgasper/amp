@@ -141,17 +141,28 @@ public:
             counts << disc.trackCount << (disc.trackCount == 1 ? " song" : " songs");
             if (disc.trackCount > 0)
                 counts << ", " << netmd::FormatFrames(disc.usedFrames).c_str();
-            if (disc.writeProtected)
-                counts << "  —  write-protected";
-            else if (!disc.writable)
-                counts << "  —  not recordable";
         }
         SetFont(&title);
         SetHighColor(Rgb(30, 30, 30));
         DrawTruncated(this, heading.String(), BRect(textLeft, 18, textRight, 42), B_ALIGN_LEFT, 0);
         SetFont(&plain);
         SetHighColor(theme::kListSecondaryText);
-        DrawTruncated(this, detail.String(), BRect(textLeft, 42, textRight, 58), B_ALIGN_LEFT, 0);
+        // a reason recording cannot work is worth more than the recorder's name
+        const char* warningText = nullptr;
+        if (fState.connected && fState.known && disc.present && disc.writeProtected)
+            warningText = "This MiniDisc is write-protected: slide the record tab on the disc to write to it.";
+        else if (fState.connected && fState.known && disc.present && !disc.writable)
+            warningText = "This MiniDisc cannot be recorded on.";
+        else if (fState.connected && fState.slowPort)
+            warningText = "This USB port is too slow for recording: plug the recorder into another port.";
+        if (warningText) {
+            BRect warning(textLeft, 42, textRight, 58);
+            icons::Draw(this, icons::kWarning, BRect(warning.left, warning.top + 2, warning.left + 13, warning.bottom - 2),
+                10, Rgb(200, 110, 20));
+            SetHighColor(Rgb(170, 90, 10));
+            DrawTruncated(this, warningText, BRect(warning.left + 17, warning.top, warning.right, warning.bottom), B_ALIGN_LEFT, 0);
+        } else
+            DrawTruncated(this, detail.String(), BRect(textLeft, 42, textRight, 58), B_ALIGN_LEFT, 0);
         DrawTruncated(this, counts.String(), BRect(textLeft, 57, bounds.right - 18, 73), B_ALIGN_LEFT, 0);
         if (fState.connected && fState.known && disc.present && disc.totalFrames > 0)
             DrawCapacity(BRect(textLeft, 80, bounds.right - 18, 94));
