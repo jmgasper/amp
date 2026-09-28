@@ -726,14 +726,15 @@ int DownloadTrack(Device& device, PcmSource& source, uint64_t pcmBytes, const st
     Reply(device.Command(send, true)).Expect("1800 080046 f0030103 28 00 000100 1001 ???? 00");
     transport.Sleep(200);
 
-    Bytes chunk(kBulkChunk + 24);
+    Bytes chunk(kBulkChunk);
     DownloadProgress state;
     state.total = total;
     uint64_t delivered = 0;
     bool first = true;
     while (state.sent < total) {
         size_t header = first ? 24 : 0;
-        size_t length = (size_t)std::min<uint64_t>(kBulkChunk, total - state.sent);
+        // the header shares the first transfer, which stays at kBulkChunk like every other
+        size_t length = (size_t)std::min<uint64_t>(kBulkChunk - header, total - state.sent);
         uint8_t* data = chunk.data() + header;
         size_t filled = 0;
         while (filled < length && delivered < pcmBytes) {
