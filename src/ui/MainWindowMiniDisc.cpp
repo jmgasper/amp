@@ -104,20 +104,6 @@ void MainWindow::StartMiniDiscWrite(BMessage* request)
         return;
     }
 
-    if (state.slowPort) {
-        BString text;
-        text << "The MiniDisc recorder is on a USB port that is too slow for recording: each USB transfer there takes "
-             << BString().SetToFormat("%.1f", state.latencyMs) << " ms, where it should take a fraction of one.\n\n"
-             << "The recorder would run out of audio after a few seconds, stop and disconnect. Plug it into another "
-             << "USB port and try again.";
-        BAlert* alert = new BAlert("USB Port Too Slow", text.String(), "Cancel", "Try Anyway", nullptr,
-            B_WIDTH_AS_USUAL, B_WARNING_ALERT);
-        alert->SetShortcut(0, B_ESCAPE);
-        alert->SetDefaultButton(alert->ButtonAt(0));
-        if (alert->Go() != 1)
-            return;
-    }
-
     // 1. what to write: the message's songs, a playlist, or what the window shows
     Library& library = App()->GetLibrary();
     std::string kind = request->GetString("kind", "songs");
@@ -224,11 +210,11 @@ void MainWindow::StartMiniDiscWrite(BMessage* request)
 
     // 4. a disc that already holds songs: erase it, or add after them?
     bool erase = false;
-    std::string discName = disc.title.empty() ? "MiniDisc" : disc.title;
+    BString discName = disc.title.empty() ? BString("The MiniDisc") : BString("The MiniDisc ") << Quoted(disc.title);
     std::string jobName = name.empty() ? "songs" : name;
     if (disc.trackCount > 0) {
         BString text;
-        text << "The MiniDisc " << Quoted(discName) << " already has " << SongCount(disc.trackCount) << " ("
+        text << discName << " already has " << SongCount(disc.trackCount) << " ("
              << netmd::FormatFrames(disc.usedFrames).c_str() << ") on it.\n\n"
              << "Do you want to erase it and write " << (name.empty() ? BString("these songs") : Quoted(name))
              << ", or add the new songs after the ones already on the disc?";
@@ -433,7 +419,8 @@ void MainWindow::ConfirmMiniDiscErase()
     if (manager.Busy() || !state.connected || !state.known || !state.disc.present)
         return;
     BString text;
-    text << "Erase the MiniDisc " << Quoted(state.disc.title.empty() ? "MiniDisc" : state.disc.title) << "?\n\n"
+    text << "Erase " << (state.disc.title.empty() ? BString("the MiniDisc") : BString("the MiniDisc ") << Quoted(state.disc.title))
+         << "?\n\n"
          << "All " << SongCount(state.disc.trackCount) << " on it will be deleted. This cannot be undone.";
     BAlert* alert = new BAlert("Erase MiniDisc", text.String(), "Cancel", "Erase", nullptr, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
     alert->SetShortcut(0, B_ESCAPE);

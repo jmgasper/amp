@@ -85,7 +85,6 @@ enum DiscFormat { kDiscLP4 = 0, kDiscLP2 = 2, kDiscSPMono = 4, kDiscSPStereo = 6
 enum Encoding { kEncodingSP = 0x90, kEncodingLP2 = 0x92, kEncodingLP4 = 0x93 };
 enum WireFormat { kWirePCM = 0x00 };
 const size_t kPcmFrameSize = 2048;          // one "frame" of the PCM wire format
-const double kSlowLatencyMs = 2.5;          // above this, SP uploads cannot keep up
 const int kPcmBytesPerSecond = 44100 * 4;   // 16-bit big-endian stereo at 44.1 kHz
 
 struct TrackInfo {
@@ -115,9 +114,8 @@ public:
 
     // Reads and drops a reply a previous session may have left behind.
     void Flush();
-    // Median time of a minimal control transfer, in milliseconds. Through a controller that
-    // waits for a 1 ms frame per USB transaction it takes three or more, and such a port cannot
-    // feed an SP recording in real time; elsewhere it takes about one or less.
+    // Median time of a minimal control transfer, in milliseconds, for diagnosing slow USB
+    // ports. It also depends on how busy the recorder is, so it is no verdict on its own.
     double MeasureLatency(int rounds = 20);
     // Sends one command (the status byte is added here) and returns the reply without its
     // status byte. Interim replies are waited out unless `acceptInterim`.
@@ -212,8 +210,7 @@ int TitleCells(const std::string& title);
 // Shortens the longest titles until everything fits in `availableCells`.
 std::vector<std::string> FitTitles(std::vector<std::string> titles, int availableCells);
 
-// Disc frames an SP track of `durationMs` occupies, including an allowance for the track's
-// last partly filled cluster.
+// Disc frames an SP track of `durationMs` occupies: its clusters, rounded up, plus one.
 int64_t SPFramesForDuration(int64_t durationMs);
 // Length of the PCM a track of `durationMs` becomes (before padding to a whole frame).
 uint64_t PcmBytesForDuration(int64_t durationMs);

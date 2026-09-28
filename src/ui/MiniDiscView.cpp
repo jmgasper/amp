@@ -153,8 +153,6 @@ public:
             warningText = "This MiniDisc is write-protected: slide the record tab on the disc to write to it.";
         else if (fState.connected && fState.known && disc.present && !disc.writable)
             warningText = "This MiniDisc cannot be recorded on.";
-        else if (fState.connected && fState.slowPort)
-            warningText = "This USB port is too slow for recording: plug the recorder into another port.";
         if (warningText) {
             BRect warning(textLeft, 42, textRight, 58);
             icons::Draw(this, icons::kWarning, BRect(warning.left, warning.top + 2, warning.left + 13, warning.bottom - 2),

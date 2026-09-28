@@ -91,8 +91,7 @@ int main(int argc, char** argv)
         device.Flush();
         if (!strcmp(command, "latency")) {
             double latency = device.MeasureLatency(100);
-            printf("control transfer: %.3f ms average%s\n", latency,
-                latency > netmd::kSlowLatencyMs ? " (too slow for SP recording)" : "");
+            printf("control transfer: %.3f ms (median of 100)\n", latency);
         } else if (!strcmp(command, "info") || !strcmp(command, "list")) {
             auto start = std::chrono::steady_clock::now();
             netmd::DiscInfo info = device.ReadDiscInfo();

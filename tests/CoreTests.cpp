@@ -96,6 +96,11 @@ void TestTitles()
         kept += !title.empty();
     CHECK(kept == 10);
     CHECK(netmd::FormatFrames(512 * 65) == "1:05");
+    // measured: songs of 34, 41, 28, 37 and 45 s took 3:22 of an erased disc
+    int64_t used = 0;
+    for (int seconds : {34, 41, 28, 37, 45})
+        used += netmd::SPFramesForDuration(seconds * 1000 + 40);
+    CHECK(used / 512 == 202);
     CHECK(netmd::FormatFrames((int64_t)512 * 3725) == "1:02:05");
 }
 

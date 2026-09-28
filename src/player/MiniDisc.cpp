@@ -41,7 +41,8 @@ std::string DescribeError(const netmd::Error& error)
 {
     switch (error.kind()) {
         case netmd::Error::kIo:
-            return "The MiniDisc recorder stopped responding. Check its cable and power, then try again.";
+            return "The MiniDisc recorder stopped responding. Check its cable and its battery or power adapter, "
+                "reconnect it (another USB port may help) and try again.";
         case netmd::Error::kTimeout:
             return "The MiniDisc recorder took too long to answer.";
         case netmd::Error::kRejected:
@@ -180,6 +181,8 @@ struct MiniDiscManager::Shared {
     MiniDiscState state;
     std::atomic<bool> busy{false};
     std::atomic<bool> cancel{false};
+    bool exited = false;
+    std::condition_variable exit;
 
     void Post(BMessage& message) { target.SendMessage(&message); }
     void PostState()
@@ -484,11 +487,21 @@ private:
     netmd::Transport* fCurrent = nullptr;
 };
 
+void Worker(std::shared_ptr<Shared> shared);
+
+// Runs the worker and reports its end, so quitting can wait for a clean stop.
+void RunWorker(std::shared_ptr<Shared> shared)
+{
+    Worker(shared);
+    std::lock_guard<std::mutex> guard(shared->lock);
+    shared->exited = true;
+    shared->exit.notify_all();
+}
+
 void Worker(std::shared_ptr<Shared> shared)
 {
     WorkerTransport transport;
     std::string openPath;
-    bool measured = false;
     while (true) {
         std::unique_ptr<MiniDiscJob> job;
         bool erase, contents, present;
@@ -529,7 +542,6 @@ void Worker(std::shared_ptr<Shared> shared)
             transport.Close();
             if (transport.Open(device.path, error)) {
                 openPath = device.path;
-                measured = false;
                 try {
                     netmd::Device(transport.Get()).Flush();
                 } catch (const netmd::Error&) {
@@ -559,26 +571,8 @@ void Worker(std::shared_ptr<Shared> shared)
         } else if (erase) {
             RunErase(*shared, md);
             ReadState(*shared, md, true);
-        } else {
+        } else
             ReadState(*shared, md, contents);
-            // how fast the port is, once the recorder has settled with its disc
-            if (!measured && openPath != kSimulatorPath) {
-                double latency = 0;
-                try {
-                    latency = md.MeasureLatency(30);
-                    measured = true;
-                } catch (const netmd::Error&) {
-                }
-                bool slow = latency > netmd::kSlowLatencyMs;
-                {
-                    std::lock_guard<std::mutex> guard(shared->lock);
-                    shared->state.latencyMs = latency;
-                    std::swap(shared->state.slowPort, slow);
-                }
-                if (slow != (latency > netmd::kSlowLatencyMs))
-                    shared->PostState();
-            }
-        }
     }
 }
 
@@ -597,7 +591,7 @@ MiniDiscManager::~MiniDiscManager()
 void MiniDiscManager::Start(const BMessenger& target)
 {
     fShared->target = target;
-    std::thread(Worker, fShared).detach();
+    std::thread(RunWorker, fShared).detach();
     std::shared_ptr<Shared> shared = fShared;
     fRoster.reset(new NetMDRoster());
     fRoster->onAdded = [shared](const NetMDDeviceId& id) {
@@ -644,12 +638,13 @@ void MiniDiscManager::Stop()
         fRoster->Stop();
         fRoster.reset();
     }
-    {
-        std::lock_guard<std::mutex> guard(fShared->lock);
-        fShared->quit = true;
-        fShared->cancel = true;
-    }
+    std::unique_lock<std::mutex> guard(fShared->lock);
+    fShared->quit = true;
+    fShared->cancel = true;
     fShared->wake.notify_all();
+    // Let the worker finish the exchange it is in: some recorders stop answering for good
+    // when a command is cut off halfway. A transfer that never returns is not waited for.
+    fShared->exit.wait_for(guard, std::chrono::seconds(5), [&] { return fShared->exited; });
 }
 
 MiniDiscState MiniDiscManager::State()
