@@ -8,7 +8,6 @@
 #include <MediaTrack.h>
 #include <MediaDefs.h>
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <random>

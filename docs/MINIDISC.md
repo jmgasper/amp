@@ -28,6 +28,10 @@ sends 16-bit 44.1 kHz PCM and the recorder does the ATRAC encoding itself.
 - **Erase Disc…** (disc view, or the sidebar entry's context menu) empties the disc after
   asking.
 
+Capacity: the recorder reports free space in SP time. A song takes its length rounded up to
+whole clusters (2.0434 s each) plus one more cluster, which matches the recorder exactly (five
+songs of 3:05 took 3:22 of disc, twelve of 6:25 took 7:05).
+
 Titles: the disc gets the playlist name, or "Artist - Album" for an album. Songs keep their
 titles on an album disc; on a mixed disc they become "Artist - Title". MiniDisc titles are
 single-byte: accents are dropped (Café → Cafe, Straße → Strasse), typographic punctuation
@@ -60,11 +64,33 @@ The protocol was implemented from the documentation that the linux-minidisc and 
 projects provide (both GPL). No code was taken from them. The EKB values and the device IDs
 are interoperability data that every NetMD implementation uses.
 
+## Verified hardware
+
+Sony MZ-DN430 (USB 054c:00ca, the MZ-NE410 family) on the owner's X399 workstation: an album
+written with *Erase and Write* and a mixed playlist (320k MP3, 24-bit 48 kHz FLAC, mono AAC)
+added after it, both at about 1.6× real time, titled, and read back from the recorder with the
+right lengths. Quitting Amp with the recorder connected leaves it answering.
+
+## Troubleshooting
+
+- **The recorder drops off USB during a write.** Check its battery or AC adapter: a portable
+  that cannot power its recording laser stops and disconnects. Try another USB port as well.
+  On the X399 the first attempts failed on the ASMedia-designed controllers (the ASM2142 card
+  and the chipset's ports), where every USB transaction waits for a 1 ms frame; the writes
+  then worked on a port of the CPU's controller with a fresh battery. The ASMedia ports were
+  not tried again with the fresh battery, so which of the two it was is open.
+  `mdtool latency` shows the median time of a control transfer (about 1.4 ms on the working
+  port); it also depends on how busy the recorder is, so it is a hint, not a verdict.
+- **"The MiniDisc is write-protected"**: slide the record tab on the disc's edge so the hole is
+  closed. The disc view warns about it and the sidebar entry shows a lock.
+- **The recorder stops answering after a program was killed while talking to it.** It has to
+  be reconnected. Amp waits for the command in progress (up to five seconds) when it quits.
+
 ## Testing
 
 - `make check` runs the core tests, including a full write and read-back against the simulator.
-- `make mdtool` builds `build-haiku/mdtool`: `mdtool info|list|erase|title <text>|write <file> [title]|pcm <file> <out>`.
-  `MDTOOL_LOG=1` prints every command and reply.
+- `make mdtool` builds `build-haiku/mdtool`: `mdtool info|list|latency|erase|title <text>|write <file> [title]|pcm <file> <out>`.
+  `MDTOOL_LOG=1` prints every command and reply; `mdtool latency` times control transfers.
 - `AMP_NETMD_SIMULATE=4 build-haiku/Amp` adds a simulated recorder (three songs on an
   80-minute disc, uploads at 4× real time) so the whole interface can be tried without
   hardware.
@@ -84,5 +110,5 @@ are interoperability data that every NetMD implementation uses.
 - **Raw USB transfers cannot be interrupted.** A bulk transfer to a recorder that stops
   answering blocks its thread in the kernel, and when the device is removed the xHCI driver
   may fail to find the pending transfer to cancel it, so the thread (and the team) cannot be
-  killed. Amp keeps all device work on one worker thread, never blocks the window on it, and
-  does not wait for it when quitting.
+  killed. Amp keeps all device work on one worker thread and never blocks the window on it;
+  when quitting it gives the worker five seconds to finish its exchange, then leaves it.
