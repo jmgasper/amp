@@ -1071,6 +1071,15 @@ void TrackListView::ShowContextMenu(int row, BPoint where)
         BMessage* last = withTracks(kMsgPlayTracks);
         last->AddBool("append", true);
         menu->AddItem(new BMenuItem("Add to Up Next", last));
+        MiniDiscState miniDisc = App()->MiniDisc().State();
+        if (miniDisc.connected) {
+            BMessage* write = withTracks(kMsgWriteToMiniDisc);
+            write->AddString("kind", "songs");
+            write->AddInt64("playlist", fPlaylistId);
+            BMenuItem* item = new BMenuItem(ids.size() == 1 ? "Write Song to MiniDisc…" : "Write Songs to MiniDisc…", write);
+            item->SetEnabled(!miniDisc.busy);
+            menu->AddItem(item);
+        }
         menu->AddSeparatorItem();
     }
     // playlists submenu

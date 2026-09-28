@@ -3,7 +3,10 @@
 #include <Bitmap.h>
 #include <Font.h>
 #include <GradientLinear.h>
+#include <Region.h>
 #include <Shape.h>
+#include <algorithm>
+#include <cmath>
 
 namespace amp {
 
@@ -58,6 +61,96 @@ void DrawNoteIcon(BView* view, BRect rect, rgb_color color)
 {
     // the Font Awesome music note, centred in the rect
     icons::DrawFitted(view, icons::kMusic, rect, color);
+}
+
+void DrawMiniDisc(BView* view, BRect rect, rgb_color body, rgb_color shutter, bool detailed)
+{
+    float side = floorf(std::min(rect.Width(), rect.Height()));
+    float left = floorf(rect.left + (rect.Width() - side) / 2);
+    float top = floorf(rect.top + (rect.Height() - side) / 2);
+    float right = left + side, bottom = top + side;
+    float cut = std::max(2.0f, floorf(side * 0.16f));
+    BPoint outline[] = {BPoint(left, top), BPoint(right - cut, top), BPoint(right, top + cut),
+        BPoint(right, bottom), BPoint(left, bottom)};
+    BShape shape;
+    shape.MoveTo(outline[0]);
+    for (int i = 1; i < 5; i++)
+        shape.LineTo(outline[i]);
+    shape.Close();
+    view->PushState();
+    view->MovePenTo(B_ORIGIN);
+    if (detailed) {
+        BGradientLinear gradient(BPoint(left, top), BPoint(left, bottom));
+        gradient.AddColor(Blend(body, Rgb(255, 255, 255), 0.25f), 0);
+        gradient.AddColor(Blend(body, Rgb(0, 0, 0), 0.2f), 255);
+        view->FillShape(&shape, gradient);
+        view->SetHighColor(Blend(body, Rgb(0, 0, 0), 0.45f));
+        view->StrokeShape(&shape);
+        // label area with two ruled lines
+        BRect label(left + side * 0.12f, top + side * 0.1f, right - side * 0.2f, top + side * 0.42f);
+        view->SetHighColor(Blend(body, Rgb(255, 255, 255), 0.8f));
+        view->FillRoundRect(label, 2, 2);
+        view->SetHighColor(Blend(body, Rgb(255, 255, 255), 0.45f));
+        for (int i = 1; i <= 2; i++) {
+            float y = floorf(label.top + label.Height() * i / 3) + 0.5f;
+            view->StrokeLine(BPoint(label.left + 3, y), BPoint(label.right - 3, y));
+        }
+    } else {
+        view->SetHighColor(body);
+        view->FillShape(&shape);
+    }
+    // the shutter covers the lower middle; through its window the disc shows
+    BRect door(left + side * 0.2f, top + side * 0.5f, right - side * 0.2f, bottom - 1);
+    if (detailed) {
+        BGradientLinear metal(BPoint(door.left, door.top), BPoint(door.right, door.top));
+        metal.AddColor(Blend(shutter, Rgb(255, 255, 255), 0.5f), 0);
+        metal.AddColor(shutter, 128);
+        metal.AddColor(Blend(shutter, Rgb(255, 255, 255), 0.35f), 255);
+        view->FillRect(door, metal);
+        view->SetHighColor(Blend(shutter, Rgb(0, 0, 0), 0.35f));
+        view->StrokeRect(door);
+        // the window: a dark opening with the rainbow-grey edge of the disc and its hub
+        BRect window(door.left + side * 0.07f, door.top + side * 0.07f, door.right - side * 0.07f, door.bottom - side * 0.07f);
+        view->SetHighColor(Blend(body, Rgb(0, 0, 0), 0.55f));
+        view->FillRect(window);
+        BRegion clip(window);
+        view->ConstrainClippingRegion(&clip);
+        BPoint center((window.left + window.right) / 2, window.top - side * 0.08f);
+        float radius = side * 0.34f;
+        BGradientLinear disc(BPoint(center.x - radius, center.y), BPoint(center.x + radius, center.y));
+        disc.AddColor(Rgb(150, 160, 180), 0);
+        disc.AddColor(Rgb(236, 238, 244), 110);
+        disc.AddColor(Rgb(184, 170, 196), 170);
+        disc.AddColor(Rgb(140, 150, 168), 255);
+        view->FillEllipse(center, radius, radius, disc);
+        view->SetHighColor(Blend(body, Rgb(0, 0, 0), 0.55f));
+        view->FillEllipse(center, side * 0.1f, side * 0.1f);
+        view->ConstrainClippingRegion(nullptr);
+    } else {
+        // small sizes: the disc as a ring in the cartridge, which no floppy has
+        BPoint center(left + side * 0.46f, top + side * 0.56f);
+        float radius = side * 0.33f;
+        view->SetHighColor(shutter);
+        view->FillEllipse(center, radius, radius);
+        view->SetHighColor(body);
+        view->FillEllipse(center, std::max(1.0f, side * 0.1f), std::max(1.0f, side * 0.1f));
+    }
+    view->PopState();
+}
+
+void DrawProgressPie(BView* view, BRect rect, float fraction, rgb_color color)
+{
+    view->PushState();
+    view->SetHighColor(color);
+    view->SetPenSize(1.2f);
+    view->StrokeEllipse(rect);
+    fraction = std::max(0.0f, std::min(1.0f, fraction));
+    if (fraction > 0) {
+        BRect inner = rect.InsetByCopy(2, 2);
+        // arcs run counter-clockwise from three o'clock: start at twelve and go clockwise
+        view->FillArc(inner, 90 - 360 * fraction, 360 * fraction);
+    }
+    view->PopState();
 }
 
 void DrawArtPlaceholder(BView* view, BRect rect)

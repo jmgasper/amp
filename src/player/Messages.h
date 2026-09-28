@@ -49,6 +49,17 @@ enum {
     kMsgSelectionChanged = 'selc',
     kMsgRowsDropped = 'rdrp',
     kMsgTrackDrag = 'trdg',           // dragged tracks: "tracks" int64[], "playlist" int64 (source)
+    // MiniDisc
+    kMsgMDState = 'mdst',             // recorder or disc changed: read MiniDiscManager::State()
+    kMsgMDProgress = 'mdpr',          // "phase", "track", "count" int32, "title", "name" string,
+                                      // "fraction", "track_fraction" float, "eta" int32 s (-1 unknown)
+    kMsgMDFinished = 'mdfn',          // "ok", "cancelled", "full", "erase" bool, "error", "name" string,
+                                      // "written", "failed", "count" int32, "duration" int64 ms
+    kMsgWriteToMiniDisc = 'mdwr',     // "tracks" int64[], "name" string, "kind" string (playlist, album, songs)
+    kMsgMDCancel = 'mdcn',
+    kMsgMDErase = 'mder',
+    kMsgMDRefresh = 'mdrf',
+    kMsgMDClearStatus = 'mdcl',       // the display goes back to the playing song
 };
 
 enum PlayerState { kStopped = 0, kPlaying = 1, kPaused = 2, kLoading = 3 };

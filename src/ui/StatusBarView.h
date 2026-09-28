@@ -18,22 +18,29 @@ public:
     void SetMAStatus(bool connected, const BString& text);
     void SetShuffle(bool shuffle);
     void SetRepeat(int repeat);
+    // The "Write to MiniDisc" button (iTunes' "Burn Disc"): shown while a recorder is connected
+    // and the view holds something to write.
+    void SetMiniDiscButton(bool visible, bool enabled);
 
     void Draw(BRect updateRect) override;
     void MouseDown(BPoint where) override;
     void MouseUp(BPoint where) override;
 
 private:
-    enum Hot { kNone, kAdd, kShuffle, kRepeat, kSettings };
+    enum Hot { kNone, kAdd, kShuffle, kRepeat, kSettings, kMiniDisc };
     Hot HitTest(BPoint where) const;
     BRect ButtonRect(int index) const;
     BRect SettingsRect() const;
+    BRect MiniDiscRect() const;
     void DrawSettingsButton();
+    void DrawMiniDiscButton();
 
     BString fSummary, fTransient, fMAText;
     bool fMAConnected = false;
     bool fShuffle = false;
     int fRepeat = 0;
+    bool fMiniDiscVisible = false;
+    bool fMiniDiscEnabled = false;
     Hot fPressed = kNone;
     BMessageRunner* fExpiry = nullptr;
 };

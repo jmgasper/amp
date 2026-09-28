@@ -10,7 +10,21 @@ namespace amp {
 
 class ToolbarView : public BView {
 public:
+    // What the display shows while a MiniDisc is written, in place of the playing song.
+    struct DeviceStatus {
+        bool active = false;
+        BString headline, detail;
+        float fraction = -1;          // overall progress; below zero the bar animates
+        BString leftLabel, rightLabel; // either side of the bar
+        bool cancellable = false;
+        bool done = false;            // finished: a check mark instead of the cancel button
+        bool failed = false;
+    };
+
     ToolbarView();
+    ~ToolbarView() override;
+    void SetDeviceStatus(const DeviceStatus& status);
+    const DeviceStatus& GetDeviceStatus() const { return fDevice; }
 
     void SetPlayerState(PlayerState state);
     void SetTrackInfo(const BString& title, const BString& artist, const BString& album, bool isMA);
@@ -31,9 +45,13 @@ public:
     void MouseUp(BPoint where) override;
     void MouseMoved(BPoint where, uint32 transit, const BMessage* drag) override;
     void FrameResized(float width, float height) override;
+    void MessageReceived(BMessage* message) override;
+    void DetachedFromWindow() override;
 
 private:
-    enum Hot { kNone, kPrev, kPlay, kNext, kVolume, kProgress, kViewList, kViewGrouped, kViewGrid };
+    enum Hot { kNone, kPrev, kPlay, kNext, kVolume, kProgress, kViewList, kViewGrouped, kViewGrid, kCancelDevice };
+    void DrawDeviceStatus(BRect lcd);
+    BRect CancelRect() const;
     void Layout();
     void DrawRoundButton(BRect rect, Hot which);
     void DrawLcd();
@@ -55,6 +73,9 @@ private:
     Hot fPressed = kNone;
     bool fTracking = false;
     BRect fPrevRect, fPlayRect, fNextRect, fVolumeRect, fLcdRect, fProgressRect, fViewRect, fSearchRect;
+    DeviceStatus fDevice;
+    float fStripePhase = 0;
+    class BMessageRunner* fPulse = nullptr;
 };
 
 } // namespace amp

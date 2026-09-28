@@ -6,6 +6,7 @@
 #include "core/MusicAssistant.h"
 #include "core/Scanner.h"
 #include "core/Settings.h"
+#include "player/MiniDisc.h"
 #include "player/Player.h"
 #include <Application.h>
 #include <atomic>
@@ -34,6 +35,7 @@ public:
     ArtStore& Art() { return *fArt; }
     Player& GetPlayer() { return *fPlayer; }
     MusicAssistant& MA() { return *fMA; }
+    MiniDiscManager& MiniDisc() { return *fMiniDisc; }
     MainWindow* Window() { return fWindow; }
 
     void StartScan();
@@ -62,6 +64,7 @@ private:
     std::unique_ptr<ArtStore> fArt;
     std::unique_ptr<Player> fPlayer;
     std::unique_ptr<Scanner> fScanner;
+    std::unique_ptr<MiniDiscManager> fMiniDisc;
     MainWindow* fWindow = nullptr;
     std::atomic<bool> fMASyncRunning{false};
     std::atomic<bool> fMAConnected{false};

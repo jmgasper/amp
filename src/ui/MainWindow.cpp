@@ -7,6 +7,7 @@
 #include <LayoutBuilder.h>
 #include <MenuBar.h>
 #include <MenuItem.h>
+#include <MessageRunner.h>
 #include <Screen.h>
 #include <ScrollView.h>
 #include <cstdio>
@@ -26,7 +27,7 @@ MainWindow::MainWindow(BRect frame)
     fViewMode = settings.viewMode;
     fPlaylistViewMode = settings.playlistViewMode;
     fSource = settings.selectedSource.empty() ? "music" : settings.selectedSource;
-    if (fSource == "playlist")
+    if (fSource == "playlist" || fSource == "minidisc")
         fSource = "music";
 
     fToolbar = new ToolbarView();
@@ -35,6 +36,7 @@ MainWindow::MainWindow(BRect frame)
     fTrackList = new TrackListView("tracks");
     fGrid = new AlbumGridView();
     fArtists = new ArtistsView();
+    fMiniDiscView = new MiniDiscView();
     BScrollView* trackScroll = new BScrollView("track-scroll", fTrackList, 0, false, true, B_NO_BORDER);
     // the column header is a sibling above the scroll view: it never scrolls
     BView* listPane = new BView("list-pane", 0);
@@ -49,6 +51,7 @@ MainWindow::MainWindow(BRect frame)
     fCards->AddView(listPane);
     fCards->AddView(gridScroll);
     fCards->AddView(fArtists);
+    fCards->AddView(fMiniDiscView);
     fSplit = new BSplitView(B_HORIZONTAL, 0);
     fSplit->AddChild(sidebarScroll, 0.0f);
     fSplit->AddChild(fContent, 1.0f);
@@ -118,6 +121,17 @@ void MainWindow::BuildMenu()
 
 bool MainWindow::QuitRequested()
 {
+    if (App()->MiniDisc().Busy()) {
+        BAlert* alert = new BAlert("Quit Amp",
+            "Amp is writing to the MiniDisc.\n\nIf you quit now, the song being written is lost and the recorder "
+            "may have to be reconnected.",
+            "Keep Writing", "Quit", nullptr, B_WIDTH_AS_USUAL, B_WARNING_ALERT);
+        alert->SetShortcut(0, B_ESCAPE);
+        if (alert->Go() != 1)
+            return false;
+    }
+    delete fMDClearRunner;
+    fMDClearRunner = nullptr;
     SaveGeometry();
     be_app->PostMessage(B_QUIT_REQUESTED);
     return true;
@@ -133,7 +147,7 @@ void MainWindow::SaveGeometry()
         d.windowH = (int)frame.Height();
         d.viewMode = fViewMode;
         d.playlistViewMode = fPlaylistViewMode;
-        d.selectedSource = fSource == "playlist" ? "music" : fSource;
+        d.selectedSource = fSource == "playlist" || fSource == "minidisc" ? "music" : fSource;
         // the split item is the scroll view (list plus scroll bar), not the list alone
         BView* sidebarItem = fSidebar->Parent() ? fSidebar->Parent() : fSidebar;
         d.sidebarWidth = (int)sidebarItem->Frame().Width();
@@ -260,6 +274,11 @@ void MainWindow::ReloadContent()
     fLastReload = system_time();
     fLibraryDirty = false;
     fToolbar->SetViewMode(CurrentViewMode());
+    if (fSource == "minidisc") {
+        fCards->SetVisibleItem((int32)3);
+        MiniDiscChanged();
+        return;
+    }
     if (fSource == "artists") {
         std::vector<int64_t> artists;
         {
@@ -363,6 +382,7 @@ void MainWindow::ReloadContent()
 
 void MainWindow::UpdateSummary(const std::vector<int64_t>& tracks)
 {
+    UpdateMiniDiscButton();
     Library& library = App()->GetLibrary();
     size_t count = 0;
     int64_t duration = 0;
@@ -408,6 +428,8 @@ void MainWindow::SelectSource(const std::string& source, int64_t playlistId, boo
         if (load && App()->LoadMAPlaylist(playlistId))
             fLoadingPlaylists.insert(playlistId);
     }
+    if (source == "minidisc")
+        App()->MiniDisc().Refresh(true);
     ReloadContent();
     if (play) {
         std::vector<int64_t> tracks = fTrackList->Tracks();
@@ -905,6 +927,42 @@ void MainWindow::MessageReceived(BMessage* message)
         case B_REFS_RECEIVED:
         case B_SIMPLE_DATA:
             be_app->PostMessage(message);
+            break;
+        // ---- MiniDisc
+        case kMsgMDState:
+            MiniDiscChanged();
+            break;
+        case kMsgMDProgress:
+            MiniDiscProgress(message);
+            break;
+        case kMsgMDFinished:
+            MiniDiscFinished(message);
+            break;
+        case kMsgWriteToMiniDisc:
+            StartMiniDiscWrite(message);
+            break;
+        case kMsgMDCancel: {
+            MiniDiscManager& manager = App()->MiniDisc();
+            if (!manager.Busy())
+                break;
+            manager.Cancel();
+            ToolbarView::DeviceStatus status = fToolbar->GetDeviceStatus();
+            status.cancellable = false;
+            status.detail = "Stopping after the current song…";
+            fToolbar->SetDeviceStatus(status);
+            break;
+        }
+        case kMsgMDErase:
+            ConfirmMiniDiscErase();
+            break;
+        case kMsgMDRefresh:
+            App()->MiniDisc().Refresh(true);
+            break;
+        case kMsgMDClearStatus:
+            delete fMDClearRunner;
+            fMDClearRunner = nullptr;
+            if (!App()->MiniDisc().Busy())
+                fToolbar->SetDeviceStatus(ToolbarView::DeviceStatus());
             break;
         default:
             BWindow::MessageReceived(message);

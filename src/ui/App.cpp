@@ -109,6 +109,7 @@ AmpApp::AmpApp()
     fPlayer->SetShuffle(data.shuffle);
     fPlayer->SetRepeat((RepeatMode)data.repeat);
     fScanner.reset(new Scanner(*fLibrary, *fImages));
+    fMiniDisc.reset(new MiniDiscManager());
     fScanner->onProgress = [this](const std::string& text, bool done) {
         BMessage message(kMsgScanProgress);
         message.AddString("text", text.c_str());
@@ -160,6 +161,7 @@ void AmpApp::ReadyToRun()
     fImages->Start();
     fArt->Start();
     fPlayer->Start();
+    fMiniDisc->Start(target);
     if (!data.libraryFolders.empty())
         StartScan();
     if (data.maEnabled && !data.maHost.empty())
@@ -169,6 +171,7 @@ void AmpApp::ReadyToRun()
 bool AmpApp::QuitRequested()
 {
     fScanner->Stop();
+    fMiniDisc->Stop();
     fPlayer->Shutdown();
     fArt->Stop();
     fImages->Stop();

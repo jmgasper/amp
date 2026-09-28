@@ -42,6 +42,9 @@ const char* const kGlyphs[] = {
     "\xef\x80\x87", // kUser        U+F007
     "\xef\x94\x9f", // kAlbum       U+F51F compact-disc
     "\xef\x94\x99", // kStream      U+F519 tower-broadcast
+    "\xef\x80\x8d", // kClose       U+F00D xmark
+    "\xef\x80\x8c", // kCheck       U+F00C check
+    "\xef\x81\xb1", // kWarning     U+F071 triangle-exclamation
 };
 
 int fState = 0; // 0 unknown, 1 ready, -1 unavailable
@@ -112,7 +115,7 @@ void Draw(BView* view, Icon icon, BRect rect, float size, rgb_color color)
 {
     if (view == nullptr || !Init())
         return;
-    if (icon < kPlay || icon > kStream)
+    if (icon < kPlay || icon > kWarning)
         return;
 
     BFont font;

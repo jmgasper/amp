@@ -269,6 +269,18 @@ void AlbumGridView::ShowContextMenu(int index, BPoint where)
     next->AddBool("next", true);
     menu->AddItem(new BMenuItem("Play Next", next));
     menu->AddItem(new BMenuItem("Show Songs", ShowSongsMessage(fAlbums[index])));
+    MiniDiscState miniDisc = App()->MiniDisc().State();
+    if (miniDisc.connected) {
+        BMessage* write = withTracks(kMsgWriteToMiniDisc);
+        write->AddString("kind", "album");
+        BString name(fAlbums[index].name.c_str());
+        if (!fAlbums[index].artist.empty())
+            name.Prepend(" - ").Prepend(fAlbums[index].artist.c_str());
+        write->AddString("name", name);
+        BMenuItem* item = new BMenuItem("Write Album to MiniDisc…", write);
+        item->SetEnabled(!miniDisc.busy);
+        menu->AddItem(item);
+    }
     menu->AddSeparatorItem();
     BMenu* playlists = new BMenu("Add to Playlist");
     playlists->AddItem(new BMenuItem("New Playlist…", withTracks(kMsgNewPlaylist)));

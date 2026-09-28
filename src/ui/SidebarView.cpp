@@ -8,6 +8,7 @@
 #include <PopUpMenu.h>
 #include <ScrollBar.h>
 #include <Window.h>
+#include <algorithm>
 
 namespace amp {
 
@@ -28,6 +29,18 @@ void SidebarView::SetPlaylists(const std::vector<SidebarPlaylist>& playlists)
 {
     fPlaylists = playlists;
     Rebuild();
+    Invalidate();
+}
+
+void SidebarView::SetMiniDisc(bool connected, const BString& label, bool busy, float fraction)
+{
+    bool rebuild = connected != fMiniDiscConnected || label != fMiniDiscLabel;
+    fMiniDiscConnected = connected;
+    fMiniDiscLabel = label;
+    fMiniDiscBusy = busy;
+    fMiniDiscFraction = fraction;
+    if (rebuild)
+        Rebuild();
     Invalidate();
 }
 
@@ -60,6 +73,11 @@ void SidebarView::Rebuild()
     add("artists", "Artists", false);
     add("albums", "Albums", false);
     add("ma", "Music Assistant", false, 0, true);
+    if (fMiniDiscConnected) {
+        y += 8;
+        add("", "DEVICES", true);
+        add("minidisc", fMiniDiscLabel.String(), false);
+    }
     y += 8;
     add("", "PLAYLISTS", true);
     for (const SidebarPlaylist& p : fPlaylists)
@@ -111,6 +129,9 @@ void SidebarView::DrawIcon(const Item& item, BRect rect, bool selected)
         icons::Draw(this, icons::kUser, rect, size, color);
     } else if (item.source == "albums") {
         icons::Draw(this, icons::kAlbum, rect, size, color);
+    } else if (item.source == "minidisc") {
+        DrawMiniDisc(this, rect.InsetByCopy(0.5f, 0.5f), color,
+            selected ? theme::kSidebarSelectionBottom : theme::kSidebarBackground);
     } else if (item.source == "ma") {
         // the Music Assistant badge stays a badge: it is the provider's mark, not a glyph
         BRect badge = rect.InsetByCopy(0, 2);
@@ -176,6 +197,12 @@ void SidebarView::Draw(BRect updateRect)
         SetFont(selected ? &bold : &plain);
         SetHighColor(selected ? theme::kSelectedText : theme::kSidebarText);
         float right = rect.right - 4;
+        if (item.source == "minidisc" && fMiniDiscBusy) {
+            BRect pie(rect.right - 20, rect.top + 3, rect.right - 7, rect.top + 16);
+            DrawProgressPie(this, pie, std::max(0.0f, fMiniDiscFraction),
+                selected ? theme::kSelectedText : theme::kSidebarSelectionBottom);
+            right = pie.left - 4;
+        }
         if (item.source == "playlist" && (item.isMA || item.synced)) {
             float badgeWidth = 24;
             DrawMABadge(this, BPoint(rect.right - badgeWidth - 4, rect.top + 4), 11);
@@ -220,7 +247,8 @@ void SidebarView::MouseMoved(BPoint where, uint32 transit, const BMessage* drag)
     fDropIndex = -1;
     if (drag && drag->what == kMsgTrackDrag && (transit == B_INSIDE_VIEW || transit == B_ENTERED_VIEW)) {
         int index = ItemAt(where);
-        if (index >= 0 && fItems[index].source == "playlist" && !fItems[index].isMA)
+        if (index >= 0 && ((fItems[index].source == "playlist" && !fItems[index].isMA)
+                || (fItems[index].source == "minidisc" && !fMiniDiscBusy)))
             fDropIndex = index;
     }
     if (previous != fDropIndex)
@@ -238,6 +266,18 @@ void SidebarView::MessageReceived(BMessage* message)
         int index = ItemAt(where);
         fDropIndex = -1;
         Invalidate();
+        if (index >= 0 && fItems[index].source == "minidisc" && !fMiniDiscBusy) {
+            BMessage write(kMsgWriteToMiniDisc);
+            int64 id;
+            for (int32 i = 0; message->FindInt64("tracks", i, &id) == B_OK; i++)
+                write.AddInt64("tracks", id);
+            int64 playlist = 0;
+            message->FindInt64("playlist", &playlist);
+            write.AddInt64("playlist", playlist);
+            write.AddString("kind", "songs");
+            Window()->PostMessage(&write);
+            return;
+        }
         if (index >= 0 && fItems[index].source == "playlist" && !fItems[index].isMA) {
             BMessage add(kMsgAddToPlaylist);
             add.AddInt64("playlist", fItems[index].playlistId);
@@ -255,6 +295,18 @@ void SidebarView::ShowContextMenu(int index, BPoint where)
 {
     const Item& item = fItems[index];
     BPopUpMenu* menu = new BPopUpMenu("sidebar-menu", false, false);
+    if (item.source == "minidisc") {
+        BMenuItem* erase = new BMenuItem("Erase MiniDisc…", new BMessage(kMsgMDErase));
+        erase->SetEnabled(!fMiniDiscBusy);
+        menu->AddItem(erase);
+        BMenuItem* refresh = new BMenuItem("Refresh", new BMessage(kMsgMDRefresh));
+        refresh->SetEnabled(!fMiniDiscBusy);
+        menu->AddItem(refresh);
+        menu->SetTargetForItems(Window());
+        menu->SetAsyncAutoDestruct(true);
+        menu->Go(ConvertToScreen(where), true, true, true);
+        return;
+    }
     menu->AddItem(new BMenuItem("New Playlist…", new BMessage(kMsgNewPlaylist)));
     if (item.source == "playlist") {
         menu->AddSeparatorItem();
@@ -263,6 +315,14 @@ void SidebarView::ShowContextMenu(int index, BPoint where)
         play->AddInt64("playlist", item.playlistId);
         play->AddBool("play", true);
         menu->AddItem(new BMenuItem("Play", play));
+        if (fMiniDiscConnected) {
+            BMessage* write = new BMessage(kMsgWriteToMiniDisc);
+            write->AddInt64("playlist", item.playlistId);
+            write->AddString("kind", "playlist");
+            BMenuItem* writeItem = new BMenuItem("Write to MiniDisc…", write);
+            writeItem->SetEnabled(!fMiniDiscBusy);
+            menu->AddItem(writeItem);
+        }
         if (!item.isMA) {
             BMessage* rename = new BMessage(kMsgRenamePlaylist);
             rename->AddInt64("playlist", item.playlistId);

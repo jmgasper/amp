@@ -8,10 +8,17 @@
 #include <GradientLinear.h>
 #include <GradientRadial.h>
 #include <Message.h>
+#include <MessageRunner.h>
+#include <Region.h>
 #include <Window.h>
+#include <cmath>
 #include <cstdio>
 
 namespace amp {
+
+namespace {
+const uint32 kMsgPulse = 'tbpl';
+}
 
 ToolbarView::ToolbarView()
     : BView("toolbar", B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE)
@@ -23,6 +30,105 @@ ToolbarView::ToolbarView()
     fSearch = new BTextControl("search", nullptr, "", new BMessage(kMsgSearch));
     fSearch->SetModificationMessage(new BMessage(kMsgSearch));
     AddChild(fSearch);
+}
+
+ToolbarView::~ToolbarView()
+{
+    delete fPulse;
+}
+
+void ToolbarView::DetachedFromWindow()
+{
+    delete fPulse;
+    fPulse = nullptr;
+    BView::DetachedFromWindow();
+}
+
+void ToolbarView::SetDeviceStatus(const DeviceStatus& status)
+{
+    fDevice = status;
+    // an indeterminate bar animates; nothing else needs a timer
+    bool animate = status.active && status.fraction < 0 && !status.done;
+    if (animate && !fPulse && Window()) {
+        BMessage pulse(kMsgPulse);
+        fPulse = new BMessageRunner(BMessenger(this), &pulse, 60000);
+    } else if (!animate) {
+        delete fPulse;
+        fPulse = nullptr;
+    }
+    Invalidate(fLcdRect);
+}
+
+void ToolbarView::MessageReceived(BMessage* message)
+{
+    if (message->what == kMsgPulse) {
+        fStripePhase = fmodf(fStripePhase + 1.0f, 12.0f);
+        Invalidate(fProgressRect.InsetByCopy(-2, -2));
+        return;
+    }
+    BView::MessageReceived(message);
+}
+
+BRect ToolbarView::CancelRect() const
+{
+    return BRect(fLcdRect.right - 24, fLcdRect.top + 7, fLcdRect.right - 10, fLcdRect.top + 21);
+}
+
+void ToolbarView::DrawDeviceStatus(BRect r)
+{
+    DrawMiniDisc(this, fArtRect.InsetByCopy(2, 2), Rgb(62, 84, 122), Rgb(176, 182, 190), true);
+    float margin = fArtRect.Width() + 16;
+    BRect textArea(r.left + margin, r.top + 4, r.right - margin, r.top + 20);
+    BFont bold(be_bold_font);
+    bold.SetSize(12);
+    BFont plain(be_plain_font);
+    plain.SetSize(11);
+    SetFont(&bold);
+    SetHighColor(theme::kLcdText);
+    DrawTruncated(this, fDevice.headline.String(), textArea, B_ALIGN_CENTER, 0);
+    SetFont(&plain);
+    SetHighColor(theme::kLcdSecondary);
+    DrawTruncated(this, fDevice.detail.String(), BRect(textArea.left, r.top + 19, textArea.right, r.top + 34), B_ALIGN_CENTER, 0);
+
+    // the bar: filled to the fraction, or moving stripes while the length is unknown
+    BRect bar = fProgressRect;
+    SetHighColor(theme::kLcdBarBackground);
+    FillRoundRect(bar, 2.5f, 2.5f);
+    if (fDevice.fraction >= 0 || fDevice.done) {
+        float fraction = fDevice.done ? 1.0f : std::min(1.0f, fDevice.fraction);
+        float right = floorf(bar.left + bar.Width() * fraction);
+        if (right > bar.left + 1)
+            FillRoundGradient(this, BRect(bar.left, bar.top, right, bar.bottom), 2.5f,
+                Blend(theme::kLcdBar, Rgb(255, 255, 255), 0.12f), theme::kLcdBar);
+    } else {
+        BRegion clip(bar.InsetByCopy(1, 0));
+        ConstrainClippingRegion(&clip);
+        SetHighColor(theme::kLcdBar);
+        for (float x = bar.left - 12 + fStripePhase; x < bar.right + 12; x += 12) {
+            BPoint stripe[4] = {BPoint(x, bar.bottom), BPoint(x + 5, bar.top), BPoint(x + 10, bar.top), BPoint(x + 5, bar.bottom)};
+            FillPolygon(stripe, 4);
+        }
+        ConstrainClippingRegion(nullptr);
+    }
+    SetHighColor(Blend(theme::kLcdBorder, Rgb(0, 0, 0), 0.1f));
+    StrokeRoundRect(bar, 2.5f, 2.5f);
+    BFont small(be_plain_font);
+    small.SetSize(9);
+    SetFont(&small);
+    SetHighColor(theme::kLcdText);
+    DrawTruncated(this, fDevice.leftLabel.String(), BRect(fArtRect.right + 4, bar.top - 5, bar.left - 7, bar.bottom + 5), B_ALIGN_RIGHT, 0);
+    DrawTruncated(this, fDevice.rightLabel.String(), BRect(bar.right + 7, bar.top - 5, r.right - 4, bar.bottom + 5), B_ALIGN_LEFT, 0);
+
+    // right-hand corner: cancel while running, a check mark or a warning once finished
+    BRect corner = CancelRect();
+    if (fDevice.cancellable) {
+        bool pressed = fTracking && fPressed == kCancelDevice;
+        SetHighColor(pressed ? Rgb(80, 88, 76) : Rgb(128, 136, 122));
+        FillEllipse(corner);
+        icons::Draw(this, icons::kClose, corner, 8.5f, Rgb(236, 240, 230));
+    } else if (fDevice.done)
+        icons::Draw(this, fDevice.failed ? icons::kWarning : icons::kCheck, corner, 11,
+            fDevice.failed ? Rgb(170, 90, 40) : theme::kLcdSecondary);
 }
 
 void ToolbarView::AttachedToWindow()
@@ -237,6 +343,10 @@ void ToolbarView::DrawLcd()
     StrokeLine(BPoint(r.left + 6, r.top + 1), BPoint(r.right - 6, r.top + 1));
     SetDrawingMode(B_OP_COPY);
 
+    if (fDevice.active) {
+        DrawDeviceStatus(r);
+        return;
+    }
     BFont bold(be_bold_font);
     bold.SetSize(12);
     BFont plain(be_plain_font);
@@ -352,7 +462,10 @@ ToolbarView::Hot ToolbarView::HitTest(BPoint where) const
         return kNext;
     if (fVolumeRect.InsetByCopy(-8, -6).Contains(where))
         return kVolume;
-    if (fProgressRect.InsetByCopy(-4, -7).Contains(where) && fState != kStopped)
+    if (fDevice.active) {
+        if (fDevice.cancellable && CancelRect().InsetByCopy(-3, -3).Contains(where))
+            return kCancelDevice;
+    } else if (fProgressRect.InsetByCopy(-4, -7).Contains(where) && fState != kStopped)
         return kProgress;
     if (fViewRect.Contains(where)) {
         float w = fViewRect.Width() / 3;
@@ -430,6 +543,10 @@ void ToolbarView::MouseUp(BPoint where)
             Window()->PostMessage(&message);
             break;
         }
+        case kCancelDevice:
+            if (released == kCancelDevice)
+                Window()->PostMessage(kMsgMDCancel);
+            break;
         case kViewList:
         case kViewGrouped:
         case kViewGrid:

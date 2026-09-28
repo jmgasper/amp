@@ -26,6 +26,9 @@ enum Icon {
     kUser,
     kAlbum,
     kStream,
+    kClose,
+    kCheck,
+    kWarning,
 };
 
 // Makes the Font Awesome font available (copying it into the user font

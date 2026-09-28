@@ -68,6 +68,11 @@ void FillRoundGradient(BView* view, BRect rect, float radius, rgb_color top, rgb
 void DrawMABadge(BView* view, BPoint leftTop, float height = 11.0f);
 void DrawArtPlaceholder(BView* view, BRect rect);
 void DrawNoteIcon(BView* view, BRect rect, rgb_color color);
+// A MiniDisc cartridge centred in `rect`: body with its cut corner and the metal shutter.
+// `detailed` adds shading and the label lines, for sizes above ~32 pixels.
+void DrawMiniDisc(BView* view, BRect rect, rgb_color body, rgb_color shutter, bool detailed = false);
+// A small progress pie (iTunes' sync indicator): a ring filled clockwise from the top.
+void DrawProgressPie(BView* view, BRect rect, float fraction, rgb_color color);
 void DrawBitmapFitted(BView* view, const BBitmap* bitmap, BRect rect);
 BString TruncateToWidth(const BView* view, const char* text, float width);
 void DrawTruncated(BView* view, const char* text, BRect rect, alignment align = B_ALIGN_LEFT, float inset = 4.0f);
