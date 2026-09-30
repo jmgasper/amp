@@ -1,4 +1,5 @@
 #include "ArtProviders.h"
+#include "ArtistLinks.h"
 #include "Http.h"
 #include "Json.h"
 #include <cctype>
@@ -8,10 +9,8 @@
 
 namespace amp {
 
-namespace {
-
 // MusicBrainz asks for at most one request per second per client.
-void MusicBrainzThrottle()
+void ArtProviders::MusicBrainzThrottle()
 {
     static std::mutex mutex;
     static std::chrono::steady_clock::time_point last;
@@ -22,6 +21,8 @@ void MusicBrainzThrottle()
         std::this_thread::sleep_for(std::chrono::milliseconds(1100 - elapsed));
     last = std::chrono::steady_clock::now();
 }
+
+namespace {
 
 std::string Quote(const std::string& text)
 {
@@ -52,16 +53,21 @@ std::vector<std::string> ArtProviders::Lookup(const ArtSource& source, const Art
     return {};
 }
 
-namespace {
-
 // loose comparison of names: lower-case, alphanumerics only
-std::string Squash(const std::string& text)
+std::string ArtProviders::SquashName(const std::string& text)
 {
     std::string out;
     for (unsigned char c : text)
         if (c >= 128 || isalnum(c))
             out.push_back(c < 128 ? (char)tolower(c) : (char)c);
     return out;
+}
+
+namespace {
+
+std::string Squash(const std::string& text)
+{
+    return ArtProviders::SquashName(text);
 }
 
 bool NamesMatch(const std::string& wanted, const std::string& found)
@@ -138,6 +144,10 @@ std::vector<std::string> ArtProviders::MusicBrainz(const ArtRequest& request)
     Json reply = Json::parse(response.body, nullptr, false);
     if (!reply.is_object())
         return urls;
+    // the releases name their artists: remember the MBID for the artist link (ArtistLinks)
+    std::string artistId = ArtistLinks::PickCreditedArtist(request.artist, response.body);
+    if (!artistId.empty())
+        ArtistLinks::Shared().Remember(request.artist, artistId);
     int count = 0;
     for (const Json& release : reply.value("releases", Json::array())) {
         if (!release.is_object())
@@ -183,6 +193,11 @@ std::vector<std::string> ArtProviders::TheAudioDB(const std::string& apiKey, con
     for (const Json& item : list) {
         if (!item.is_object())
             continue;
+        // TheAudioDB knows the artist's MBID: remember it for the artist link (ArtistLinks)
+        if (request.artistImage && item.contains("strArtist") && item["strArtist"].is_string()
+            && item.contains("strMusicBrainzID") && item["strMusicBrainzID"].is_string()
+            && Squash(item["strArtist"].get<std::string>()) == Squash(request.artist))
+            ArtistLinks::Shared().Remember(request.artist, item["strMusicBrainzID"].get<std::string>());
         const char* fields[] = {"strArtistThumb", "strArtistFanart", "strAlbumThumb", "strAlbumThumbHQ", nullptr};
         for (int i = 0; fields[i]; i++) {
             if (item.contains(fields[i]) && item[fields[i]].is_string()) {

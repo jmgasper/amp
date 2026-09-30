@@ -18,6 +18,11 @@ public:
     static std::vector<std::string> TheAudioDB(const std::string& apiKey, const ArtRequest& request);
     static std::vector<std::string> Discogs(const std::string& token, const ArtRequest& request,
         std::vector<std::string>& downloadHeaders);
+
+    // Waits until MusicBrainz may be asked again: it takes one request per second per client.
+    static void MusicBrainzThrottle();
+    // A name for loose comparison: lower-case letters and digits only.
+    static std::string SquashName(const std::string& text);
 };
 
 } // namespace amp

@@ -1,6 +1,7 @@
 #include "App.h"
 #include "Icons.h"
 #include "MainWindow.h"
+#include "core/ArtistLinks.h"
 #include "core/Http.h"
 #include "player/Messages.h"
 #include <Alert.h>
@@ -89,6 +90,7 @@ AmpApp::AmpApp()
     BPath cache(cacheBase);
     cache.Append("Amp");
     create_directory(cache.Path(), 0755);
+    ArtistLinks::Shared().Open(cache.Path());
     cache.Append("art");
     create_directory(cache.Path(), 0755);
     fCacheDir = cache.Path();

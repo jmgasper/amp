@@ -3,6 +3,7 @@
 #include "Theme.h"
 #include "Icons.h"
 #include <Bitmap.h>
+#include <Cursor.h>
 #include <Font.h>
 #include <LayoutBuilder.h>
 #include <ScrollBar.h>
@@ -16,6 +17,7 @@ namespace {
 const float kArtistRowHeight = 40.0f;
 const float kHeaderHeight = 100.0f;    // the picture, its shadow and a margin
 const float kPictureSize = 80.0f;
+const rgb_color kLinkColor = {30, 84, 176, 255};
 }
 
 // ---- ArtistListView ---------------------------------------------------------
@@ -200,6 +202,8 @@ ArtistHeaderView::ArtistHeaderView()
 
 void ArtistHeaderView::SetArtist(int64_t artistId)
 {
+    if (artistId != fArtist)
+        SetHot(false);
     fArtist = artistId;
     Invalidate();
 }
@@ -213,6 +217,7 @@ void ArtistHeaderView::Draw(BRect updateRect)
     Library& library = App()->GetLibrary();
     Library::Locker locker(library);
     const Artist* artist = library.ArtistById(fArtist);
+    fArtRect = fNameRect = BRect();
     if (!artist) {
         BFont font(be_plain_font);
         font.SetSize(13);
@@ -225,15 +230,25 @@ void ArtistHeaderView::Draw(BRect updateRect)
     BRect art(14, 9, 14 + kPictureSize - 1, 9 + kPictureSize - 1);
     ArtRequest request = App()->Art().RequestFor(artist->art, artist->name, "", "", true);
     BBitmap* bitmap = App()->Art().Get(artist->art, 160, &request);
-    DrawArtworkOnPage(this, bitmap, art, true, 7.0f, 3.0f);
+    fArtRect = DrawArtworkOnPage(this, bitmap, art, true, 7.0f, 3.0f);
     BFont big(be_bold_font);
     big.SetSize(18);
     SetFont(&big);
-    SetHighColor(theme::kListText);
     float right = bounds.right - 12;
-    DrawTruncated(this, artist->name.c_str(), BRect(art.right + 14, 14, right, 40), B_ALIGN_LEFT, 0);
+    float nameLeft = art.right + 16;
+    BRect nameBox(nameLeft, 14, right, 40);
+    // the name is a link: blue and underlined while the pointer is on it or on the picture
+    SetHighColor(fHot ? kLinkColor : theme::kListText);
+    DrawTruncated(this, artist->name.c_str(), nameBox, B_ALIGN_LEFT, 0);
+    float nameWidth = std::min(StringWidth(artist->name.c_str()), nameBox.Width());
+    font_height height;
+    big.GetHeight(&height);
+    float baseline = floorf((nameBox.top + nameBox.bottom + height.ascent - height.descent) / 2 + 0.5f);
+    fNameRect = BRect(nameLeft, baseline - ceilf(height.ascent), nameLeft + nameWidth, baseline + ceilf(height.descent));
+    if (fHot)
+        StrokeLine(BPoint(nameLeft, baseline + 2), BPoint(nameLeft + nameWidth, baseline + 2));
     if (artist->isMA())
-        DrawMABadge(this, BPoint(art.right + 14 + std::min(StringWidth(artist->name.c_str()) + 8, right - art.right - 40), 20), 13);
+        DrawMABadge(this, BPoint(nameLeft + std::min(StringWidth(artist->name.c_str()) + 8, right - nameLeft - 26), 20), 13);
     BFont plain(be_plain_font);
     plain.SetSize(12);
     SetFont(&plain);
@@ -247,11 +262,46 @@ void ArtistHeaderView::Draw(BRect updateRect)
             total += album->durationMs;
     if (total > 0)
         info << ", " << FormatDuration(total).c_str();
-    DrawTruncated(this, info.String(), BRect(art.right + 14, 44, right, 62), B_ALIGN_LEFT, 0);
+    DrawTruncated(this, info.String(), BRect(nameLeft, 45, right, 63), B_ALIGN_LEFT, 0);
     if (artist->isMA()) {
         SetHighColor(theme::kBadgeBackground);
-        DrawTruncated(this, "Streamed from Music Assistant", BRect(art.right + 14, 62, right, 80), B_ALIGN_LEFT, 0);
+        DrawTruncated(this, "Streamed from Music Assistant", BRect(nameLeft, 63, right, 81), B_ALIGN_LEFT, 0);
     }
+}
+
+bool ArtistHeaderView::OverLink(BPoint where) const
+{
+    return fArtist != 0 && (fArtRect.Contains(where) || fNameRect.InsetByCopy(-2, -2).Contains(where));
+}
+
+void ArtistHeaderView::SetHot(bool hot)
+{
+    if (hot == fHot)
+        return;
+    fHot = hot;
+    static const BCursor link(B_CURSOR_ID_FOLLOW_LINK);
+    if (hot) {
+        SetViewCursor(&link);
+        SetToolTip("Show this artist on MusicBrainz");
+    } else {
+        SetViewCursor(B_CURSOR_SYSTEM_DEFAULT);
+        SetToolTip((const char*)nullptr);
+    }
+    Invalidate(fNameRect.InsetByCopy(-2, -4));
+}
+
+void ArtistHeaderView::MouseMoved(BPoint where, uint32 transit, const BMessage* drag)
+{
+    SetHot(drag == nullptr && transit != B_EXITED_VIEW && transit != B_OUTSIDE_VIEW && OverLink(where));
+}
+
+void ArtistHeaderView::MouseDown(BPoint where)
+{
+    if (!OverLink(where) || !Window())
+        return;
+    BMessage message(kMsgOpenArtistPage);
+    message.AddInt64("artist", fArtist);
+    Window()->PostMessage(&message);
 }
 
 // ---- ArtistsView ------------------------------------------------------------

@@ -33,14 +33,23 @@ private:
     BHandler* fOwner = nullptr;
 };
 
+// The selected artist's picture, name and figures. The picture and the name link to the
+// artist on MusicBrainz (kMsgOpenArtistPage to the window).
 class ArtistHeaderView : public BView {
 public:
     ArtistHeaderView();
     void SetArtist(int64_t artistId);
     void Draw(BRect updateRect) override;
+    void MouseDown(BPoint where) override;
+    void MouseMoved(BPoint where, uint32 transit, const BMessage* drag) override;
 
 private:
+    bool OverLink(BPoint where) const;
+    void SetHot(bool hot);
+
     int64_t fArtist = 0;
+    BRect fArtRect, fNameRect;   // where the last Draw put the picture and the name
+    bool fHot = false;           // the pointer is over one of them
 };
 
 class ArtistsView : public BView {

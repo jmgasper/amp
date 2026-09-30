@@ -1,5 +1,6 @@
 // Unit tests for Amp's portable core. Build and run with `make check` (on Haiku) or compile
 // this file with src/core on any system with a C++17 compiler.
+#include "core/ArtistLinks.h"
 #include "core/Des.h"
 #include "core/ImageCache.h"
 #include "core/Library.h"
@@ -16,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -592,6 +594,49 @@ void TestScanner()
 
 } // namespace
 
+void TestArtistLinks()
+{
+    const std::string tool = "b0b1a3ea-3fe1-4e3f-8a4b-0a8d9f5ee7a4";
+    const std::string other = "5b11f4ce-a62d-471e-81fc-a69a8278c7da";
+    CHECK(ArtistLinks::IsMbid(tool));
+    CHECK(!ArtistLinks::IsMbid("b0b1a3ea-3fe1-4e3f-8a4b-0a8d9f5ee7a"));
+    CHECK(!ArtistLinks::IsMbid("b0b1a3ea_3fe1-4e3f-8a4b-0a8d9f5ee7a4"));
+    CHECK(!ArtistLinks::IsMbid("g0b1a3ea-3fe1-4e3f-8a4b-0a8d9f5ee7a4"));
+    CHECK(ArtistLinks::ArtistUrl(tool) == "https://musicbrainz.org/artist/" + tool);
+    CHECK(ArtistLinks::SearchUrl("Sigur Rós & Co") ==
+        "https://musicbrainz.org/search?query=Sigur%20R%C3%B3s%20%26%20Co&type=artist&method=indexed");
+    CHECK(ArtistLinks::PageUrl("Tool", tool) == ArtistLinks::ArtistUrl(tool));
+    CHECK(ArtistLinks::PageUrl("Tool", "") == ArtistLinks::SearchUrl("Tool"));
+    // an artist search: exactly one artist of the name is taken, a shared name is not
+    std::string one = "{\"artists\":[{\"id\":\"" + tool + "\",\"name\":\"TOOL\",\"score\":100},"
+        "{\"id\":\"" + other + "\",\"name\":\"Toolshed\",\"score\":80}]}";
+    CHECK(ArtistLinks::PickArtist("Tool", one) == tool);
+    std::string two = "{\"artists\":[{\"id\":\"" + tool + "\",\"name\":\"Nirvana\"},"
+        "{\"id\":\"" + other + "\",\"name\":\"Nirvana\"}]}";
+    CHECK(ArtistLinks::PickArtist("Nirvana", two).empty());
+    CHECK(ArtistLinks::PickArtist("Tool", "not json").empty());
+    CHECK(ArtistLinks::PickArtist("Tool", "{\"artists\":null}").empty());
+    // a release search names the credited artist
+    std::string releases = "{\"releases\":[{\"id\":\"x\",\"artist-credit\":[{\"name\":\"AC/DC\","
+        "\"artist\":{\"id\":\"" + other + "\",\"name\":\"AC/DC\"}}]}]}";
+    CHECK(ArtistLinks::PickCreditedArtist("ACDC", releases) == other);
+    CHECK(ArtistLinks::PickCreditedArtist("Tool", releases).empty());
+    // what is learned is kept in the cache directory
+    char folder[] = "/tmp/amp-links-XXXXXX";
+    CHECK(mkdtemp(folder) != nullptr);
+    ArtistLinks& links = ArtistLinks::Shared();
+    links.Open(folder);
+    links.Remember("Tool", tool);
+    links.Remember("Nobody", "not an id");
+    CHECK(links.Known("tool") == tool);
+    CHECK(links.Known("Nobody").empty());
+    std::ifstream saved(std::string(folder) + "/artist-mbids.json");
+    std::string text((std::istreambuf_iterator<char>(saved)), std::istreambuf_iterator<char>());
+    CHECK(text.find(tool) != std::string::npos);
+    unlink((std::string(folder) + "/artist-mbids.json").c_str());
+    rmdir(folder);
+}
+
 int main()
 {
     TestDes();
@@ -603,6 +648,7 @@ int main()
     TestTagStream();
     TestMp4();
     TestScanner();
+    TestArtistLinks();
     if (gFailures) {
         fprintf(stderr, "%d check(s) failed\n", gFailures);
         return 1;

@@ -47,6 +47,7 @@ enum {
     kMsgToggleRepeat = 'rept',
     kMsgShowAlbum = 'shal',           // "album" int64
     kMsgShowArtist = 'shar',          // "artist" int64
+    kMsgOpenArtistPage = 'arpg',      // "artist" int64: the artist on MusicBrainz, in the web browser
     kMsgShowTracks = 'shtr',          // "tracks" int64[]: open these songs as an album list
     kMsgSelectionChanged = 'selc',
     kMsgRowsDropped = 'rdrp',

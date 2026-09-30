@@ -27,6 +27,9 @@ public:
     void SelectSource(const std::string& source, int64_t playlistId, bool play = false);
     void ShowAlbum(int64_t albumId);
     void ShowArtist(int64_t artistId);
+    // Opens the artist's MusicBrainz page (a search when the artist is not known there) in
+    // the preferred web browser.
+    void OpenArtistPage(int64_t artistId);
 
 private:
     void BuildMenu();

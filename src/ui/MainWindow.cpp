@@ -3,6 +3,7 @@
 #include "NameDialog.h"
 #include "SettingsWindow.h"
 #include "Theme.h"
+#include "core/ArtistLinks.h"
 #include <Alert.h>
 #include <LayoutBuilder.h>
 #include <MenuBar.h>
@@ -10,8 +11,11 @@
 #include <MessageRunner.h>
 #include <Screen.h>
 #include <ScrollView.h>
+#include <Url.h>
+#include <atomic>
 #include <cstdio>
 #include <map>
+#include <thread>
 
 namespace amp {
 
@@ -77,6 +81,42 @@ MainWindow::MainWindow(BRect frame)
     ReloadSidebar();
     fSidebar->Select(fSource.c_str(), 0);
     ReloadContent();
+}
+
+void MainWindow::OpenArtistPage(int64_t artistId)
+{
+    std::string name, album;
+    {
+        Library& library = App()->GetLibrary();
+        Library::Locker locker(library);
+        const Artist* artist = library.ArtistById(artistId);
+        if (!artist)
+            return;
+        name = artist->name;
+        // the album with the most songs tells apart artists who share the name
+        size_t most = 0;
+        for (int64_t albumId : artist->albumIds)
+            if (const Album* found = library.AlbumById(albumId))
+                if (found->trackIds.size() > most) {
+                    most = found->trackIds.size();
+                    album = found->name;
+                }
+    }
+    if (name.empty())
+        return;
+    // one lookup at a time: a second click while MusicBrainz is asked does nothing
+    static std::atomic<bool> busy{false};
+    if (busy.exchange(true))
+        return;
+    bool known = !ArtistLinks::Shared().Known(name).empty();
+    if (!known)
+        fStatus->SetTransient(BString("Looking up ") << name.c_str() << " on MusicBrainz…", 4);
+    std::thread([name, album] {
+        std::string mbid = ArtistLinks::Shared().Resolve(name, album);
+        std::string url = ArtistLinks::PageUrl(name, mbid);
+        BUrl(url.c_str(), false).OpenWithPreferredApplication(true);
+        busy = false;
+    }).detach();
 }
 
 void MainWindow::LibraryScanProgress(const BString& text, bool done, int processed, int total)
@@ -723,6 +763,9 @@ void MainWindow::MessageReceived(BMessage* message)
                 ShowArtist(artistId);
             break;
         }
+        case kMsgOpenArtistPage:
+            OpenArtistPage(message->GetInt64("artist", 0));
+            break;
         case kMsgNewPlaylist: {
             BMessage* templ = new BMessage(kMsgNewPlaylistNamed);
             int64 id;
