@@ -20,7 +20,9 @@ server sends audio straight to the Haiku machine.
   instant search across title, artist and album. Playlists offer the same three views
   (list, album list, cover grid) and remember their own choice. The column header lives in
   its own view above the table, so it stays put and is never redrawn over the rows while
-  the list scrolls.
+  the list scrolls. Covers and artist pictures lie on a soft drop shadow. In the artists
+  view, clicking the artist's picture or name opens the artist's MusicBrainz page in the
+  web browser (a MusicBrainz search when the artist cannot be told apart by name).
 - Playlists: create, rename, delete, add and remove songs, drag to reorder, drag songs or
   whole albums onto a playlist in the sidebar, "Sync to Music Assistant" per playlist.
 - Artwork cache with online lookup through Deezer, MusicBrainz + Cover Art Archive,
@@ -29,7 +31,10 @@ server sends audio straight to the Haiku machine.
 - Transport with volume, seek bar, shuffle and repeat; play queue with "Play Next" and
   "Add to Up Next". The display shows the playing track's artwork, title, artist and album,
   elapsed and remaining time, the MA badge for streamed tracks, and the source quality
-  ("Lossless" or the bit rate).
+  ("Lossless" or the bit rate). Longer jobs (a MiniDisc write, a library scan, a Music
+  Assistant sync) get a page of their own in the display: while more than one thing is going
+  on, the arrow beside the artwork, the dots under it or a click on the text turns between the
+  song and each job, like iTunes' status display.
 - MiniDisc: playlists, albums and selected songs can be written to a MiniDisc in a NetMD
   recorder, in SP. The recorder appears under DEVICES with the disc's contents and a capacity
   bar; the display shows iTunes-style progress with a cancel button. Amp asks before erasing

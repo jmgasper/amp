@@ -10,6 +10,7 @@ src/core     portable C++17 (no Haiku headers except in Scanner's TagLib use)
   Workers            a handful of threads for one job (Kernel Kit threads on Haiku)
   ImageCache         on-disk artwork cache + fetch worker (MA proxy, online providers)
   ArtProviders       MusicBrainz/CAA, TheAudioDB, Discogs lookups
+  ArtistLinks        an artist's MusicBrainz page: MBIDs seen in lookups or asked by name, cached
   Http               libcurl wrapper
   WebSocket          minimal RFC 6455 client
   TimeFilter         Kalman clock filter (port of the Sendspin reference)
@@ -32,11 +33,11 @@ src/player   Haiku Media Kit
 src/ui       Haiku Interface Kit
   App                BApplication: owns everything, background scan/sync jobs
   MainWindow         toolbar / sidebar / content cards / status bar
-  ToolbarView        transport, volume, LCD display, view switcher, search
+  ToolbarView        transport, volume, LCD display (song and activity pages), view switcher, search
   SidebarView        LIBRARY and PLAYLISTS sources, drop target, context menu
   TrackListView      table with album-grouped mode, sorting, selection, drag & drop
   AlbumGridView      album cover grid
-  ArtistsView        artist list + header + grouped track list
+  ArtistsView        artist list + header (links to MusicBrainz) + grouped track list
   StatusBarView      +/shuffle/repeat, summary, MA indicator, Settings button
   Icons              Font Awesome glyphs: registers the bundled font, draws it centred;
                      the MiniDisc pictures from the resources, scaled and tinted
@@ -62,11 +63,43 @@ The MiniDisc cartridge is artwork, not a glyph: `resources/images/minidisc.png` 
 the MiniDisc view and the display) and `minidisc-glyph.png` (one colour, tinted like a glyph
 for the sidebar and the status bar) are PNG resources of the application. `icons::DrawPicture`
 and `icons::DrawGlyph` scale them by averaging, because the pictures are several times larger
-than they are shown. The application icon is a vector drawing: `tools/make-icon.py` builds the
-HVIF from circles and gradients and traces the notes from `resources/branding/source/amp-icon.png`.
+than they are shown. The application icon, a chrome loudspeaker with a glossy blue note in
+front of it, is a vector drawing: `tools/make-icon.py` builds the HVIF from ellipses fitted to
+`resources/branding/source/amp-icon.png` and gradients sampled from it, traces the note, and
+keeps the screws, highlights and the note's shadow for 32 or 64 pixels and up (level of detail).
+`make-icon.py --import picture.png` turns new artwork on a white background into that source.
 
-Covers in the grid lie on a soft shadow (`DrawSoftShadow`): a black picture whose alpha is
-the blurred outline of the cover, made once per cover size and kept.
+Covers (grid, album list, artists view) and the artist picture lie on a soft shadow
+(`DrawArtworkOnPage`, which calls `DrawSoftShadow`): a black picture whose alpha is the blurred
+outline of the cover, made once per cover size and kept.
+
+## The display and its pages
+
+The LCD display in the toolbar shows the playing song and, besides it, *activities*
+(`ToolbarView::Activity`: an id, a picture, headline, detail, a progress fraction or an
+animated bar, labels, an optional cancel command, a finished state). The window adds or
+updates them by id (`SetActivity`) and takes them away (`RemoveActivity`); today they are the
+MiniDisc write or erase (`minidisc`), the library scan (`scan`, from `kMsgScanProgress` with
+`scan` set and the scanner's file counts) and the Music Assistant library fetch (`ma-sync`,
+from `kMsgMAStatus` with `syncing`). A finished scan or sync leaves after a few seconds
+(`ExpireActivity`).
+
+The pages are the song (while one is playing or paused) followed by the activities. With more
+than one page a round arrow beside the artwork and one dot per page appear; the arrow, a click
+on the text or a dot turns the page. A MiniDisc write comes to the front when it starts and
+again when it ends; the scan and the sync never push the song aside. A song that starts
+playing is shown.
+
+## Artist links
+
+Clicking the picture or the name in the artists view's header (`kMsgOpenArtistPage`) opens
+`https://musicbrainz.org/artist/<MBID>` with `BUrl::OpenWithPreferredApplication`, or a
+MusicBrainz artist search when the MBID stays unknown. `ArtistLinks` keeps MBIDs in
+`artist-mbids.json` in the cache folder. They are taken from the answers the artwork lookups
+get anyway (the credited artist of a MusicBrainz release, TheAudioDB's `strMusicBrainzID`), or
+looked up on the click: a MusicBrainz artist search that must find exactly one artist of that
+name, then, for a name several artists share, a release search with one of the artist's
+albums. A name that finds nothing is not asked about again for a week.
 
 ## Scanning
 
