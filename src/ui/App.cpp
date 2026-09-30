@@ -128,6 +128,10 @@ AmpApp::AmpApp()
         BMessage message(kMsgScanProgress);
         message.AddString("text", text.c_str());
         message.AddBool("done", done);
+        // the library scan itself: the display follows it (one-off lines come from PostStatus)
+        message.AddBool("scan", true);
+        message.AddInt32("processed", fScanner->Processed());
+        message.AddInt32("total", fScanner->Total());
         if (fWindow)
             BMessenger(fWindow).SendMessage(&message);
     };
@@ -206,7 +210,7 @@ void AmpApp::MessageReceived(BMessage* message)
             if (fMAEnabled)
                 ConnectMusicAssistant(true);
             else
-                fScanner->onProgress("Music Assistant is switched off in Settings", true);
+                PostStatus("Music Assistant is switched off in Settings");
             break;
         case kMsgTrackFinished: {
             int32 generation = 0;
@@ -248,11 +252,20 @@ void AmpApp::ArgvReceived(int32 argc, char** argv)
         RefsReceived(&refs);
 }
 
+void AmpApp::PostStatus(const std::string& text)
+{
+    BMessage message(kMsgScanProgress);
+    message.AddString("text", text.c_str());
+    message.AddBool("done", true);
+    if (fWindow)
+        BMessenger(fWindow).SendMessage(&message);
+}
+
 void AmpApp::StartScan()
 {
     SettingsData data = fSettings->Get();
     if (data.libraryFolders.empty()) {
-        fScanner->onProgress("No library folders configured", true);
+        PostStatus("No library folders configured");
         return;
     }
     // a newer scanner reads fields older versions did not store: read every file once more
@@ -298,10 +311,12 @@ void AmpApp::ConnectMusicAssistant(bool resync)
 
 void AmpApp::MAConnectWorker(bool resync)
 {
-    auto status = [this](bool connected, const std::string& text) {
+    // `syncing`: the library is being fetched; the display follows the sync until kMsgMASyncDone
+    auto status = [this](bool connected, const std::string& text, bool syncing = false) {
         BMessage message(kMsgMAStatus);
         message.AddBool("connected", connected);
         message.AddString("message", text.c_str());
+        message.AddBool("syncing", syncing);
         if (fWindow)
             BMessenger(fWindow).SendMessage(&message);
     };
@@ -326,9 +341,10 @@ void AmpApp::MAConnectWorker(bool resync)
     }
     if (resync) {
         MASyncResult result;
+        status(true, "Music Assistant: fetching the library", true);
         bool ok = fMA->FetchLibrary(result, [&](const std::string& text) {
             if (fMAEnabled)
-                status(true, "Music Assistant: " + text);
+                status(true, "Music Assistant: " + text, true);
         });
         if (!fMAEnabled) {
             fMASyncRunning = false;

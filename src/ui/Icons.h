@@ -30,6 +30,10 @@ enum Icon {
     kCheck,
     kWarning,
     kLock,
+    kFolder,
+    kSync,
+    kChevronRight,
+    kIconCount      // the number of glyphs, not one itself
 };
 
 // Pictures shipped in the application's resources.

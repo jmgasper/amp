@@ -18,6 +18,7 @@ namespace amp {
 namespace {
 const uint32 kMsgAbout = 'abou';
 const uint32 kMsgReloadNow = 'rlnw';
+const uint32 kMsgActivityExpired = 'acex';   // "id": a finished activity leaves the display
 }
 
 MainWindow::MainWindow(BRect frame)
@@ -78,6 +79,42 @@ MainWindow::MainWindow(BRect frame)
     ReloadContent();
 }
 
+void MainWindow::LibraryScanProgress(const BString& text, bool done, int processed, int total)
+{
+    // the scan runs in the background: its page never pushes the playing song aside
+    ToolbarView::Activity scan;
+    scan.id = "scan";
+    scan.kind = ToolbarView::kActivityScan;
+    scan.detail = text;
+    if (done) {
+        scan.done = true;
+        bool unchanged = text == "Library up to date";
+        scan.headline = unchanged ? text : BString("Library updated");
+        if (unchanged)
+            scan.detail = total > 0 ? BString() << total << (total == 1 ? " song" : " songs") : BString();
+        fToolbar->SetActivity(scan, false);
+        ExpireActivity("scan", unchanged ? 2500000 : 6000000);
+        return;
+    }
+    scan.headline = "Updating Library";
+    if (total > 0) {
+        scan.fraction = std::min(1.0f, (float)processed / total);
+        scan.leftLabel << (int)(scan.fraction * 100) << "%";
+        scan.detail = BString() << "Checked " << processed << " of " << total << " songs";
+    }
+    fToolbar->SetActivity(scan, false);
+}
+
+void MainWindow::ExpireActivity(const char* id, bigtime_t after)
+{
+    auto found = fActivityRunners.find(id);
+    if (found != fActivityRunners.end())
+        delete found->second;
+    BMessage expired(kMsgActivityExpired);
+    expired.AddString("id", id);
+    fActivityRunners[id] = new BMessageRunner(BMessenger(this), &expired, after, 1);
+}
+
 void MainWindow::BuildMenu()
 {
     // Amp keeps its chrome minimal like iTunes; the menu offers keyboard access to everything.
@@ -132,6 +169,9 @@ bool MainWindow::QuitRequested()
     }
     delete fMDClearRunner;
     fMDClearRunner = nullptr;
+    for (auto& runner : fActivityRunners)
+        delete runner.second;
+    fActivityRunners.clear();
     SaveGeometry();
     be_app->PostMessage(B_QUIT_REQUESTED);
     return true;
@@ -883,12 +923,49 @@ void MainWindow::MessageReceived(BMessage* message)
             message->FindBool("connected", &connected);
             message->FindString("message", &text);
             fStatus->SetMAStatus(connected, text ? text : "");
+            if (message->GetBool("syncing", false)) {
+                ToolbarView::Activity sync;
+                sync.id = "ma-sync";
+                sync.kind = ToolbarView::kActivitySync;
+                sync.headline = "Syncing Music Assistant";
+                BString detail(text ? text : "");
+                detail.RemoveFirst("Music Assistant: ");
+                sync.detail = detail;
+                fToolbar->SetActivity(sync, false);
+            } else if (!connected)
+                fToolbar->RemoveActivity("ma-sync"); // switched off or the connection went
             break;
         }
-        case kMsgMASyncDone:
+        case kMsgMASyncDone: {
             ReloadSidebar();
             ReloadContent();
+            if (fToolbar->FindActivity("ma-sync")) {
+                BString error = message->GetString("error", "");
+                ToolbarView::Activity sync;
+                sync.id = "ma-sync";
+                sync.kind = ToolbarView::kActivitySync;
+                sync.done = true;
+                sync.failed = !error.IsEmpty();
+                sync.headline = error.IsEmpty() ? "Music Assistant synced" : "Music Assistant sync failed";
+                sync.detail = error;
+                fToolbar->SetActivity(sync, false);
+                ExpireActivity("ma-sync", 6000000);
+            }
             break;
+        }
+        case kMsgActivityExpired: {
+            BString id = message->GetString("id", "");
+            auto runner = fActivityRunners.find(id.String());
+            if (runner != fActivityRunners.end()) {
+                delete runner->second;
+                fActivityRunners.erase(runner);
+            }
+            // a job that started again in the meantime stays
+            const ToolbarView::Activity* activity = fToolbar->FindActivity(id.String());
+            if (activity && activity->done)
+                fToolbar->RemoveActivity(id.String());
+            break;
+        }
         case kMsgMACleared:
             // album ids were dealt anew and the streamed songs are gone: back to the plain source
             ClearDrillDown();
@@ -916,6 +993,9 @@ void MainWindow::MessageReceived(BMessage* message)
             message->FindString("text", &text);
             message->FindBool("done", &done);
             fStatus->SetTransient(text ? text : "", done ? 6 : 0);
+            if (message->GetBool("scan", false))
+                LibraryScanProgress(text ? text : "", done, message->GetInt32("processed", 0),
+                    message->GetInt32("total", 0));
             break;
         }
         case kMsgLibraryChanged:
@@ -968,10 +1048,12 @@ void MainWindow::MessageReceived(BMessage* message)
             if (!manager.Busy())
                 break;
             manager.Cancel();
-            ToolbarView::DeviceStatus status = fToolbar->GetDeviceStatus();
-            status.cancellable = false;
-            status.detail = "Stopping after the current song…";
-            fToolbar->SetDeviceStatus(status);
+            if (const ToolbarView::Activity* shown = fToolbar->FindActivity("minidisc")) {
+                ToolbarView::Activity status = *shown;
+                status.cancelCommand = 0;
+                status.detail = "Stopping after the current song…";
+                fToolbar->SetActivity(status);
+            }
             break;
         }
         case kMsgMDErase:
@@ -984,7 +1066,7 @@ void MainWindow::MessageReceived(BMessage* message)
             delete fMDClearRunner;
             fMDClearRunner = nullptr;
             if (!App()->MiniDisc().Busy())
-                fToolbar->SetDeviceStatus(ToolbarView::DeviceStatus());
+                fToolbar->RemoveActivity("minidisc");
             break;
         default:
             BWindow::MessageReceived(message);

@@ -26,6 +26,10 @@ public:
     void Start(const std::vector<std::string>& folders, bool force = false);
     void Stop();
     bool IsRunning() const { return fRunning; }
+    // How far the running scan is: the files looked at and the files found (0 while the
+    // folders are listed).
+    int Processed() const { return fProcessed; }
+    int Total() const { return fTotal; }
     // How many files are read side by side; 0 picks a number that suits the machine.
     void SetWorkerCount(int count) { fWorkerCount = count; }
 
@@ -78,6 +82,8 @@ private:
     std::atomic<bool> fRunning{false};
     std::atomic<bool> fStop{false};
     int fWorkerCount = 0;
+    std::atomic<int> fProcessed{0};
+    std::atomic<int> fTotal{0};
 };
 
 } // namespace amp

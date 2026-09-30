@@ -465,6 +465,7 @@ void Scanner::Flush(Pass& pass, bool everything)
 
 void Scanner::ReportProgress(Pass& pass)
 {
+    fProcessed = pass.processed.load();
     if (!onProgress)
         return;
     {
@@ -479,6 +480,8 @@ void Scanner::ReportProgress(Pass& pass)
 
 void Scanner::Run(std::vector<std::string> folders, bool force)
 {
+    fProcessed = 0;
+    fTotal = 0;
     if (onProgress)
         onProgress("Scanning folders", false);
     for (std::string& folder : folders)
@@ -499,6 +502,8 @@ void Scanner::Run(std::vector<std::string> folders, bool force)
             pass.changed.push_back(&file);
     }
     pass.lastRebuild = NowMs();
+    fProcessed = pass.processed.load();
+    fTotal = (int)pass.files.size();
     if (!pass.changed.empty() && !fStop) {
         RunWorkers(std::min(workers, (int)pass.changed.size()), "Amp tag reader", [&](int) {
             while (!fStop) {
@@ -529,6 +534,7 @@ void Scanner::Run(std::vector<std::string> folders, bool force)
     if (!missing.empty())
         fLibrary.RemoveTracksByUri(missing, false);
     int added = pass.added;
+    fProcessed = pass.processed.load();
     if (added || !missing.empty())
         fLibrary.RebuildIndex();
     fRunning = false;

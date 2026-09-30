@@ -55,7 +55,11 @@ const char* const kGlyphs[] = {
     "\xef\x80\x8c", // kCheck       U+F00C check
     "\xef\x81\xb1", // kWarning     U+F071 triangle-exclamation
     "\xef\x80\xa3", // kLock        U+F023 lock
+    "\xef\x81\xbc", // kFolder      U+F07C folder-open
+    "\xef\x80\xa1", // kSync        U+F021 arrows-rotate
+    "\xef\x81\x94", // kChevronRight U+F054 chevron-right
 };
+static_assert(sizeof(kGlyphs) / sizeof(kGlyphs[0]) == kIconCount, "one glyph per icon");
 
 int fState = 0; // 0 unknown, 1 ready, -1 unavailable
 
@@ -125,7 +129,7 @@ void Draw(BView* view, Icon icon, BRect rect, float size, rgb_color color)
 {
     if (view == nullptr || !Init())
         return;
-    if (icon < kPlay || icon > kLock)
+    if (icon < 0 || icon >= kIconCount)
         return;
 
     BFont font;

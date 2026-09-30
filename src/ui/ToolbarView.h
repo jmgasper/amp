@@ -5,26 +5,37 @@
 #include <String.h>
 #include <TextControl.h>
 #include <View.h>
+#include <vector>
 
 namespace amp {
 
 class ToolbarView : public BView {
 public:
-    // What the display shows while a MiniDisc is written, in place of the playing song.
-    struct DeviceStatus {
-        bool active = false;
+    // Something besides the playing song that the display follows: a MiniDisc write, a
+    // library scan, a Music Assistant sync. With more than one thing to show, the display
+    // gets pages (iTunes' status display): the arrow next to the artwork, the dots below it
+    // or a click on the text turns to another.
+    enum ActivityKind { kActivityMiniDisc, kActivityScan, kActivitySync };
+    struct Activity {
+        BString id;                    // "minidisc", "scan", "ma-sync"
+        ActivityKind kind = kActivityMiniDisc; // the picture on the left
         BString headline, detail;
-        float fraction = -1;          // overall progress; below zero the bar animates
+        float fraction = -1;           // overall progress; below zero the bar animates
         BString leftLabel, rightLabel; // either side of the bar
-        bool cancellable = false;
-        bool done = false;            // finished: a check mark instead of the cancel button
+        uint32 cancelCommand = 0;      // shows a cancel button that sends this to the window
+        bool done = false;             // finished: a check mark instead of the cancel button
         bool failed = false;
     };
 
     ToolbarView();
     ~ToolbarView() override;
-    void SetDeviceStatus(const DeviceStatus& status);
-    const DeviceStatus& GetDeviceStatus() const { return fDevice; }
+    // Adds the activity, or updates the one with its id. A new one is shown at once when
+    // `show` is set; otherwise the display stays on its page and the dots tell of the new one.
+    void SetActivity(const Activity& activity, bool show = true);
+    void RemoveActivity(const char* id);
+    const Activity* FindActivity(const char* id) const;
+    // Turns the display to the activity (or to the playing song with an empty id).
+    void ShowPage(const char* id);
 
     void SetPlayerState(PlayerState state);
     void SetTrackInfo(const BString& title, const BString& artist, const BString& album, bool isMA);
@@ -49,9 +60,24 @@ public:
     void DetachedFromWindow() override;
 
 private:
-    enum Hot { kNone, kPrev, kPlay, kNext, kVolume, kProgress, kViewList, kViewGrouped, kViewGrid, kCancelDevice };
-    void DrawDeviceStatus(BRect lcd);
+    enum Hot { kNone, kPrev, kPlay, kNext, kVolume, kProgress, kViewList, kViewGrouped, kViewGrid, kCancelActivity,
+        kPager, kPageDot, kPageText };
+    void DrawActivity(const Activity& activity, BRect lcd);
+    void DrawPager(BRect lcd);
     BRect CancelRect() const;
+    // The pages the display turns through: the playing song (nullptr) first, then the activities.
+    std::vector<const Activity*> Pages() const;
+    // The page on show, an index into Pages(); -1 when there is nothing to show (the Amp mark).
+    int ShownIndex() const;
+    bool HasSong() const { return fState != kStopped && !fTitle.IsEmpty(); }
+    void SongMayHaveAppeared();
+    void ShowIndex(int index);
+    BString PageName(int index) const;
+    BRect PagerRect() const;
+    BRect PageDotRect(int index, int count) const;
+    BRect TextRect() const;       // the two lines of text: a click there turns the page
+    int PageDotAt(BPoint where) const;
+    void UpdatePulse();
     void Layout();
     void DrawRoundButton(BRect rect, Hot which);
     void DrawLcd();
@@ -73,7 +99,11 @@ private:
     Hot fPressed = kNone;
     bool fTracking = false;
     BRect fPrevRect, fPlayRect, fNextRect, fVolumeRect, fLcdRect, fProgressRect, fViewRect, fSearchRect;
-    DeviceStatus fDevice;
+    std::vector<Activity> fActivities;
+    BString fShown;               // id of the activity on show; empty: the playing song
+    bool fHadSong = false;
+    int fPressedDot = -1;
+    BString fToolTipPage;         // what the pager's tool tip names
     float fStripePhase = 0;
     class BMessageRunner* fPulse = nullptr;
 };

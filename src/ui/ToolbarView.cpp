@@ -13,6 +13,7 @@
 #include <Window.h>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace amp {
 
@@ -58,11 +59,110 @@ void ToolbarView::DetachedFromWindow()
     BView::DetachedFromWindow();
 }
 
-void ToolbarView::SetDeviceStatus(const DeviceStatus& status)
+void ToolbarView::SetActivity(const Activity& activity, bool show)
 {
-    fDevice = status;
+    bool known = false;
+    for (Activity& existing : fActivities)
+        if (existing.id == activity.id) {
+            existing = activity;
+            known = true;
+        }
+    if (!known) {
+        fActivities.push_back(activity);
+        if (show)
+            fShown = activity.id;
+    }
+    UpdatePulse();
+    Invalidate(fLcdRect);
+}
+
+void ToolbarView::RemoveActivity(const char* id)
+{
+    for (auto it = fActivities.begin(); it != fActivities.end(); ++it)
+        if (it->id == id) {
+            fActivities.erase(it);
+            break;
+        }
+    if (fShown == id)
+        fShown = ""; // back to the song, or whatever is left
+    UpdatePulse();
+    Invalidate(fLcdRect);
+}
+
+const ToolbarView::Activity* ToolbarView::FindActivity(const char* id) const
+{
+    for (const Activity& activity : fActivities)
+        if (activity.id == id)
+            return &activity;
+    return nullptr;
+}
+
+void ToolbarView::ShowPage(const char* id)
+{
+    fShown = id ? id : "";
+    UpdatePulse();
+    Invalidate(fLcdRect);
+}
+
+std::vector<const ToolbarView::Activity*> ToolbarView::Pages() const
+{
+    std::vector<const Activity*> pages;
+    if (HasSong())
+        pages.push_back(nullptr);
+    for (const Activity& activity : fActivities)
+        pages.push_back(&activity);
+    return pages;
+}
+
+int ToolbarView::ShownIndex() const
+{
+    std::vector<const Activity*> pages = Pages();
+    for (size_t i = 0; i < pages.size(); i++)
+        if (pages[i] ? pages[i]->id == fShown : fShown.IsEmpty())
+            return (int)i;
+    // the page on show went away: the song, else the first activity
+    return pages.empty() ? -1 : 0;
+}
+
+void ToolbarView::ShowIndex(int index)
+{
+    std::vector<const Activity*> pages = Pages();
+    if (pages.empty())
+        return;
+    index = ((index % (int)pages.size()) + (int)pages.size()) % (int)pages.size();
+    fShown = pages[index] ? pages[index]->id : BString();
+    UpdatePulse();
+    Invalidate(fLcdRect);
+}
+
+BString ToolbarView::PageName(int index) const
+{
+    std::vector<const Activity*> pages = Pages();
+    if (index < 0 || index >= (int)pages.size())
+        return BString();
+    if (!pages[index])
+        return BString("Show the playing song");
+    return BString("Show: ") << pages[index]->headline;
+}
+
+void ToolbarView::SongMayHaveAppeared()
+{
+    // a song that starts while the display follows something else is shown: the user just
+    // asked for it. The other pages stay a click away.
+    bool song = HasSong();
+    if (song && !fHadSong)
+        fShown = "";
+    fHadSong = song;
+    UpdatePulse();
+}
+
+void ToolbarView::UpdatePulse()
+{
     // an indeterminate bar animates; nothing else needs a timer
-    bool animate = status.active && status.fraction < 0 && !status.done;
+    int index = ShownIndex();
+    std::vector<const Activity*> pages = Pages();
+    const Activity* shown = index >= 0 ? pages[index] : nullptr;
+    bool animate = shown && shown->fraction < 0 && !shown->done;
     if (animate && !fPulse && Window()) {
         BMessage pulse(kMsgPulse);
         fPulse = new BMessageRunner(BMessenger(this), &pulse, 60000);
@@ -70,7 +170,6 @@ void ToolbarView::SetDeviceStatus(const DeviceStatus& status)
         delete fPulse;
         fPulse = nullptr;
     }
-    Invalidate(fLcdRect);
 }
 
 void ToolbarView::MessageReceived(BMessage* message)
@@ -88,28 +187,99 @@ BRect ToolbarView::CancelRect() const
     return BRect(fLcdRect.right - 24, fLcdRect.top + 7, fLcdRect.right - 10, fLcdRect.top + 21);
 }
 
-void ToolbarView::DrawDeviceStatus(BRect r)
+BRect ToolbarView::PagerRect() const
 {
-    DrawMiniDisc(this, fArtRect.InsetByCopy(2, 2), Rgb(62, 84, 122), Rgb(176, 182, 190), true);
+    return BRect(fArtRect.right + 7, fLcdRect.top + 6, fArtRect.right + 21, fLcdRect.top + 20);
+}
+
+BRect ToolbarView::PageDotRect(int index, int count) const
+{
+    BRect pager = PagerRect();
+    float center = floorf((pager.left + pager.right) / 2);
+    float spacing = count > 3 ? 5 : 6;
+    float x = floorf(center - spacing * (count - 1) / 2 + spacing * index + 0.5f);
+    float y = pager.bottom + 7;
+    return BRect(x - 1.5f, y - 1.5f, x + 1.5f, y + 1.5f);
+}
+
+BRect ToolbarView::TextRect() const
+{
+    // equal margins keep the text centred; the pager takes a little more on the left
     float margin = fArtRect.Width() + 16;
-    BRect textArea(r.left + margin, r.top + 4, r.right - margin, r.top + 20);
+    if (Pages().size() > 1)
+        margin = PagerRect().right + 6 - fLcdRect.left;
+    return BRect(fLcdRect.left + margin, fLcdRect.top + 4, fLcdRect.right - margin, fLcdRect.top + 34);
+}
+
+int ToolbarView::PageDotAt(BPoint where) const
+{
+    int count = (int)Pages().size();
+    for (int i = 0; i < count && count <= 6; i++)
+        if (PageDotRect(i, count).InsetByCopy(-2, -3).Contains(where))
+            return i;
+    return -1;
+}
+
+void ToolbarView::DrawPager(BRect r)
+{
+    std::vector<const Activity*> pages = Pages();
+    int count = (int)pages.size();
+    if (count < 2)
+        return;
+    // a small round button with an arrow, like the one iTunes shows when the display has more to say
+    BRect pager = PagerRect();
+    bool pressed = fTracking && fPressed == kPager;
+    SetHighColor(pressed ? Rgb(96, 104, 92) : Blend(theme::kLcdSecondary, theme::kLcdBottom, 0.25f));
+    FillEllipse(pager);
+    icons::Draw(this, icons::kChevronRight, pager.OffsetByCopy(0.5f, 0), 7.5f, Rgb(236, 240, 230));
+    // one dot per page, the page on show filled
+    if (count > 6)
+        return;
+    int shown = ShownIndex();
+    for (int i = 0; i < count; i++) {
+        BRect dot = PageDotRect(i, count);
+        SetHighColor(i == shown ? theme::kLcdText : Blend(theme::kLcdSecondary, theme::kLcdBottom, 0.45f));
+        FillEllipse(dot);
+    }
+}
+
+void ToolbarView::DrawActivity(const Activity& activity, BRect r)
+{
+    switch (activity.kind) {
+        case kActivityMiniDisc:
+            DrawMiniDisc(this, fArtRect.InsetByCopy(2, 2), Rgb(62, 84, 122), Rgb(176, 182, 190), true);
+            break;
+        case kActivityScan:
+        case kActivitySync: {
+            BRect tile = fArtRect.InsetByCopy(3, 3);
+            SetHighColor(Blend(theme::kLcdBottom, Rgb(255, 255, 255), 0.35f));
+            FillRoundRect(tile, 5, 5);
+            SetHighColor(Blend(theme::kLcdBorder, theme::kLcdBottom, 0.3f));
+            StrokeRoundRect(tile, 5, 5);
+            icons::Draw(this, activity.kind == kActivityScan ? icons::kFolder : icons::kSync, tile, 17,
+                theme::kLcdSecondary);
+            break;
+        }
+    }
+    BRect text = TextRect();
+    BRect textArea(text.left, r.top + 4, text.right, r.top + 20);
     BFont bold(be_bold_font);
     bold.SetSize(12);
     BFont plain(be_plain_font);
     plain.SetSize(11);
     SetFont(&bold);
     SetHighColor(theme::kLcdText);
-    DrawTruncated(this, fDevice.headline.String(), textArea, B_ALIGN_CENTER, 0);
+    DrawTruncated(this, activity.headline.String(), textArea, B_ALIGN_CENTER, 0);
     SetFont(&plain);
     SetHighColor(theme::kLcdSecondary);
-    DrawTruncated(this, fDevice.detail.String(), BRect(textArea.left, r.top + 19, textArea.right, r.top + 34), B_ALIGN_CENTER, 0);
+    DrawTruncated(this, activity.detail.String(), BRect(textArea.left, r.top + 19, textArea.right, r.top + 34), B_ALIGN_CENTER, 0);
 
     // the bar: filled to the fraction, or moving stripes while the length is unknown
     BRect bar = fProgressRect;
     SetHighColor(theme::kLcdBarBackground);
     FillRoundRect(bar, 2.5f, 2.5f);
-    if (fDevice.fraction >= 0 || fDevice.done) {
-        float fraction = fDevice.done ? 1.0f : std::min(1.0f, fDevice.fraction);
+    if (activity.fraction >= 0 || activity.done) {
+        float fraction = activity.done ? 1.0f : std::min(1.0f, activity.fraction);
         float right = floorf(bar.left + bar.Width() * fraction);
         if (right > bar.left + 1)
             FillRoundGradient(this, BRect(bar.left, bar.top, right, bar.bottom), 2.5f,
@@ -130,19 +300,19 @@ void ToolbarView::DrawDeviceStatus(BRect r)
     small.SetSize(9);
     SetFont(&small);
     SetHighColor(theme::kLcdText);
-    DrawTruncated(this, fDevice.leftLabel.String(), BRect(fArtRect.right + 4, bar.top - 5, bar.left - 7, bar.bottom + 5), B_ALIGN_RIGHT, 0);
-    DrawTruncated(this, fDevice.rightLabel.String(), BRect(bar.right + 7, bar.top - 5, r.right - 4, bar.bottom + 5), B_ALIGN_LEFT, 0);
+    DrawTruncated(this, activity.leftLabel.String(), BRect(fArtRect.right + 4, bar.top - 5, bar.left - 7, bar.bottom + 5), B_ALIGN_RIGHT, 0);
+    DrawTruncated(this, activity.rightLabel.String(), BRect(bar.right + 7, bar.top - 5, r.right - 4, bar.bottom + 5), B_ALIGN_LEFT, 0);
 
     // right-hand corner: cancel while running, a check mark or a warning once finished
     BRect corner = CancelRect();
-    if (fDevice.cancellable) {
-        bool pressed = fTracking && fPressed == kCancelDevice;
+    if (activity.cancelCommand != 0 && !activity.done) {
+        bool pressed = fTracking && fPressed == kCancelActivity;
         SetHighColor(pressed ? Rgb(80, 88, 76) : Rgb(128, 136, 122));
         FillEllipse(corner);
         icons::Draw(this, icons::kClose, corner, 8.5f, Rgb(236, 240, 230));
-    } else if (fDevice.done)
-        icons::Draw(this, fDevice.failed ? icons::kWarning : icons::kCheck, corner, 11,
-            fDevice.failed ? Rgb(170, 90, 40) : theme::kLcdSecondary);
+    } else if (activity.done)
+        icons::Draw(this, activity.failed ? icons::kWarning : icons::kCheck, corner, 11,
+            activity.failed ? Rgb(170, 90, 40) : theme::kLcdSecondary);
 }
 
 void ToolbarView::AttachedToWindow()
@@ -194,6 +364,7 @@ void ToolbarView::Layout()
 void ToolbarView::SetPlayerState(PlayerState state)
 {
     fState = state;
+    SongMayHaveAppeared();
     Invalidate();
 }
 
@@ -203,6 +374,7 @@ void ToolbarView::SetTrackInfo(const BString& title, const BString& artist, cons
     fArtist = artist;
     fAlbum = album;
     fIsMA = isMA;
+    SongMayHaveAppeared();
     Invalidate(fLcdRect);
 }
 
@@ -366,15 +538,18 @@ void ToolbarView::DrawLcd()
     StrokeLine(BPoint(r.left + 6, r.top + 1), BPoint(r.right - 6, r.top + 1));
     SetDrawingMode(B_OP_COPY);
 
-    if (fDevice.active) {
-        DrawDeviceStatus(r);
+    int shown = ShownIndex();
+    std::vector<const Activity*> pages = Pages();
+    if (shown >= 0 && pages[shown]) {
+        DrawActivity(*pages[shown], r);
+        DrawPager(r);
         return;
     }
     BFont bold(be_bold_font);
     bold.SetSize(12);
     BFont plain(be_plain_font);
     plain.SetSize(11);
-    if (fState == kStopped || fTitle.IsEmpty()) {
+    if (!HasSong()) {
         // idle: the Amp mark
         float cx = r.left + r.Width() / 2;
         icons::Draw(this, icons::kMusic, BRect(cx - 40, r.top + 12, cx - 12, r.top + 40), 20, theme::kLcdSecondary);
@@ -396,7 +571,7 @@ void ToolbarView::DrawLcd()
 
     // right-hand column: quality label above the MA badge; the text stays centred between
     // two equal margins so long titles never run under either side
-    float margin = fArtRect.Width() + 16;
+    float margin = TextRect().left - r.left;
     BFont tiny(be_bold_font);
     tiny.SetSize(8.5f);
     float rightEdge = r.right - 7;
@@ -431,6 +606,7 @@ void ToolbarView::DrawLcd()
         line = fLoading.IsEmpty() ? "Loading…" : fLoading;
     DrawTruncated(this, line.String(), BRect(textArea.left, r.top + 19, textArea.right, r.top + 34), B_ALIGN_CENTER, 0);
     DrawProgress(r);
+    DrawPager(r);
 }
 
 void ToolbarView::DrawViewButtons()
@@ -485,11 +661,22 @@ ToolbarView::Hot ToolbarView::HitTest(BPoint where) const
         return kNext;
     if (fVolumeRect.InsetByCopy(-8, -6).Contains(where))
         return kVolume;
-    if (fDevice.active) {
-        if (fDevice.cancellable && CancelRect().InsetByCopy(-3, -3).Contains(where))
-            return kCancelDevice;
+    int shown = ShownIndex();
+    std::vector<const Activity*> pages = Pages();
+    if (fLcdRect.Contains(where) && pages.size() > 1) {
+        if (PagerRect().InsetByCopy(-3, -3).Contains(where))
+            return kPager;
+        if (PageDotAt(where) >= 0)
+            return kPageDot;
+    }
+    if (shown >= 0 && pages[shown]) {
+        const Activity* activity = pages[shown];
+        if (activity->cancelCommand != 0 && !activity->done && CancelRect().InsetByCopy(-3, -3).Contains(where))
+            return kCancelActivity;
     } else if (fProgressRect.InsetByCopy(-4, -7).Contains(where) && fState != kStopped)
         return kProgress;
+    if (pages.size() > 1 && TextRect().Contains(where))
+        return kPageText;
     if (fViewRect.Contains(where)) {
         float w = fViewRect.Width() / 3;
         int index = (int)((where.x - fViewRect.left) / w);
@@ -510,6 +697,7 @@ void ToolbarView::MouseDown(BPoint where)
     fPressed = HitTest(where);
     if (fPressed == kNone)
         return;
+    fPressedDot = fPressed == kPageDot ? PageDotAt(where) : -1;
     fTracking = true;
     SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS | B_NO_POINTER_HISTORY);
     if (fPressed == kVolume) {
@@ -526,8 +714,20 @@ void ToolbarView::MouseDown(BPoint where)
 
 void ToolbarView::MouseMoved(BPoint where, uint32 transit, const BMessage* drag)
 {
-    if (!fTracking)
+    if (!fTracking) {
+        // the pager names the page it turns to
+        BString tip;
+        Hot hot = transit == B_EXITED_VIEW || transit == B_OUTSIDE_VIEW ? kNone : HitTest(where);
+        if (hot == kPager || hot == kPageText)
+            tip = PageName(ShownIndex() + 1 < (int)Pages().size() ? ShownIndex() + 1 : 0);
+        else if (hot == kPageDot)
+            tip = PageName(PageDotAt(where));
+        if (tip != fToolTipPage) {
+            fToolTipPage = tip;
+            SetToolTip(tip.IsEmpty() ? (const char*)nullptr : tip.String());
+        }
         return;
+    }
     if (fPressed == kVolume) {
         fVolume = VolumeFromPoint(where);
         BMessage message(kMsgVolumeChanged);
@@ -566,9 +766,23 @@ void ToolbarView::MouseUp(BPoint where)
             Window()->PostMessage(&message);
             break;
         }
-        case kCancelDevice:
-            if (released == kCancelDevice)
-                Window()->PostMessage(kMsgMDCancel);
+        case kCancelActivity: {
+            int shown = ShownIndex();
+            std::vector<const Activity*> pages = Pages();
+            if (released == kCancelActivity && shown >= 0 && pages[shown] && pages[shown]->cancelCommand != 0)
+                Window()->PostMessage(pages[shown]->cancelCommand);
+            break;
+        }
+        case kPager:
+        case kPageText:
+            if (released == fPressed)
+                ShowIndex(ShownIndex() + 1);
+            fToolTipPage = "";
+            SetToolTip((const char*)nullptr);
+            break;
+        case kPageDot:
+            if (released == kPageDot && PageDotAt(where) == fPressedDot)
+                ShowIndex(fPressedDot);
             break;
         case kViewList:
         case kViewGrouped:

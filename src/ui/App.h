@@ -54,7 +54,8 @@ public:
     static AmpApp* Instance();
 
 private:
-    void Post(uint32 what, const char* key = nullptr, const char* value = nullptr);
+    // A one-off line for the status bar (kMsgScanProgress without "scan").
+    void PostStatus(const std::string& text);
     void MAConnectWorker(bool resync);
     // Runs `change` unless Music Assistant was switched off in the meantime: what a worker
     // fetched from the server must not come back into a library that was just cleared.

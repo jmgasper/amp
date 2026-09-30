@@ -12,6 +12,7 @@
 #include <SplitView.h>
 #include <String.h>
 #include <Window.h>
+#include <map>
 #include <set>
 #include <string>
 
@@ -49,6 +50,10 @@ private:
     void MiniDiscFinished(BMessage* message);
     void ConfirmMiniDiscErase();
     void ClearMiniDiscStatus(bigtime_t after);
+    // the library scan as a page of the display
+    void LibraryScanProgress(const BString& text, bool done, int processed, int total);
+    // takes a finished activity off the display after a while
+    void ExpireActivity(const char* id, bigtime_t after);
 
     ToolbarView* fToolbar;
     SidebarView* fSidebar;
@@ -80,6 +85,7 @@ private:
     std::vector<BString> fMDTitles;       // library titles of the songs being written
     float fMDFraction = -1;
     class BMessageRunner* fMDClearRunner = nullptr;
+    std::map<std::string, class BMessageRunner*> fActivityRunners;
 };
 
 } // namespace amp

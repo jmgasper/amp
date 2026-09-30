@@ -10,11 +10,12 @@ enum {
     kMsgPlayerProgress = 'plpr',      // "position" int64 ms, "duration" int64 ms
     kMsgPlayerError = 'pler',         // "error" string
     kMsgPlayerVolume = 'plvo',        // "volume" float
-    kMsgMAStatus = 'mast',            // "connected" bool, "message" string
+    kMsgMAStatus = 'mast',            // "connected" bool, "message" string, "syncing" bool (library fetch running)
     kMsgTrackFinished = 'trfn',       // player -> app: "generation" int32
     // library / background -> UI
     kMsgLibraryChanged = 'lbch',
-    kMsgScanProgress = 'scpr',        // "text" string, "done" bool
+    kMsgScanProgress = 'scpr',        // "text" string, "done" bool; from the library scan also
+                                      // "scan" true, "processed" and "total" int32
     kMsgArtReady = 'arrd',            // "key" string, "path" string
     kMsgMASyncDone = 'masd',          // "error" string
     kMsgMACleared = 'macl',           // Music Assistant was switched off and its content removed

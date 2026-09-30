@@ -35,6 +35,15 @@ void Inform(const char* title, const BString& text, alert_type type = B_INFO_ALE
     alert->Go(nullptr);
 }
 
+// The MiniDisc's page in the display.
+ToolbarView::Activity MiniDiscActivity()
+{
+    ToolbarView::Activity activity;
+    activity.id = "minidisc";
+    activity.kind = ToolbarView::kActivityMiniDisc;
+    return activity;
+}
+
 } // namespace
 
 void MainWindow::MiniDiscChanged()
@@ -288,12 +297,12 @@ void MainWindow::StartMiniDiscWrite(BMessage* request)
     delete fMDClearRunner;
     fMDClearRunner = nullptr;
     fMiniDiscView->BeginWrite(fMDTitles, durations, erase);
-    ToolbarView::DeviceStatus status;
-    status.active = true;
+    ToolbarView::Activity status = MiniDiscActivity();
     status.headline << "Writing " << (name.empty() ? BString("songs") : Quoted(name)) << " to the MiniDisc";
     status.detail = erase ? "Erasing the disc…" : "Preparing…";
-    status.cancellable = true;
-    fToolbar->SetDeviceStatus(status);
+    status.cancelCommand = kMsgMDCancel;
+    fToolbar->SetActivity(status);
+    fToolbar->ShowPage("minidisc");
     MiniDiscChanged();
 }
 
@@ -308,10 +317,9 @@ void MainWindow::MiniDiscProgress(BMessage* message)
     bool cancelling = App()->MiniDisc().Cancelling();
     BString song = track >= 1 && track <= (int32)fMDTitles.size() ? fMDTitles[track - 1] : BString(message->GetString("title", ""));
 
-    ToolbarView::DeviceStatus status;
-    status.active = true;
+    ToolbarView::Activity status = MiniDiscActivity();
     status.headline << "Writing " << (fMDJobName == "songs" ? BString("songs") : Quoted(fMDJobName)) << " to the MiniDisc";
-    status.cancellable = !cancelling;
+    status.cancelCommand = cancelling ? 0 : kMsgMDCancel;
     switch (phase) {
         case kMDPreparing:
             status.detail = "Preparing…";
@@ -342,7 +350,7 @@ void MainWindow::MiniDiscProgress(BMessage* message)
             status.rightLabel = remaining;
         }
     }
-    fToolbar->SetDeviceStatus(status);
+    fToolbar->SetActivity(status);
     fMDFraction = status.fraction >= 0 ? status.fraction : 0;
     MiniDiscState state = App()->MiniDisc().State();
     BString label = state.known && state.disc.present && !state.disc.title.empty() ? BString(state.disc.title.c_str()) : BString("MiniDisc");
@@ -354,14 +362,14 @@ void MainWindow::MiniDiscFinished(BMessage* message)
 {
     bool ok = message->GetBool("ok", false);
     BString error = message->GetString("error", "");
-    ToolbarView::DeviceStatus status;
-    status.active = true;
+    ToolbarView::Activity status = MiniDiscActivity();
     status.done = true;
     if (message->GetBool("erase", false)) {
         status.headline = ok ? "The MiniDisc was erased" : "The MiniDisc could not be erased";
         status.failed = !ok;
         status.detail = ok ? BString("It is empty now.") : error;
-        fToolbar->SetDeviceStatus(status);
+        fToolbar->SetActivity(status);
+        fToolbar->ShowPage("minidisc"); // the outcome shows even when the song was on show
         ClearMiniDiscStatus(6000000);
         if (!ok)
             Inform("MiniDisc", error, B_WARNING_ALERT);
@@ -389,7 +397,8 @@ void MainWindow::MiniDiscFinished(BMessage* message)
     status.detail << "Wrote " << (written == count ? SongCount(written) : BString() << written << " of " << SongCount(count));
     if (duration > 0)
         status.detail << " (" << FormatDuration(duration).c_str() << ")";
-    fToolbar->SetDeviceStatus(status);
+    fToolbar->SetActivity(status);
+    fToolbar->ShowPage("minidisc"); // the outcome shows even when the song was on show
     ClearMiniDiscStatus(10000000);
     fMiniDiscView->EndWrite();
     fMDFraction = -1;
@@ -427,11 +436,11 @@ void MainWindow::ConfirmMiniDiscErase()
     if (alert->Go() != 1)
         return;
     manager.Erase();
-    ToolbarView::DeviceStatus status;
-    status.active = true;
+    ToolbarView::Activity status = MiniDiscActivity();
     status.headline = "Erasing the MiniDisc";
     status.detail = state.disc.title.empty() ? BString() : Quoted(state.disc.title);
-    fToolbar->SetDeviceStatus(status);
+    fToolbar->SetActivity(status);
+    fToolbar->ShowPage("minidisc");
     delete fMDClearRunner;
     fMDClearRunner = nullptr;
     MiniDiscChanged();
