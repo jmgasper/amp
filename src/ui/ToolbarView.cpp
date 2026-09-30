@@ -18,13 +18,27 @@ namespace amp {
 
 namespace {
 const uint32 kMsgPulse = 'tbpl';
+// the left end: transport buttons, then the volume slider between its two speakers
+const float kVolumeGap = 32;         // right edge of Next to the slider (the small speaker sits between)
+const float kSliderWidth = 90;       // preferred; narrower windows shrink it down to kSliderMinWidth
+const float kSliderMinWidth = 56;
+const float kSpeakerRoom = 26;       // the loud speaker right of the slider
+const float kLcdMinWidth = 220;
+const float kLcdComfortWidth = 300;  // below this the slider gives up width first
+const float kLcdMaxWidth = 560;
+const float kGap = 24;               // between the display, the view buttons and the search field
+const float kSearchMinWidth = 120;
+const float kViewWidth = 96;
+// the narrowest toolbar that still has room for all of it
+const float kMinWidth = 126 + kVolumeGap + kSliderMinWidth + kSpeakerRoom + 16 + kLcdMinWidth + kGap + kViewWidth
+    + kGap + kSearchMinWidth + 14;
 }
 
 ToolbarView::ToolbarView()
     : BView("toolbar", B_WILL_DRAW | B_FRAME_EVENTS | B_FULL_UPDATE_ON_RESIZE)
 {
     SetViewColor(B_TRANSPARENT_COLOR);
-    SetExplicitMinSize(BSize(640, theme::kToolbarHeight));
+    SetExplicitMinSize(BSize(kMinWidth, theme::kToolbarHeight));
     SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, theme::kToolbarHeight));
     SetExplicitPreferredSize(BSize(1000, theme::kToolbarHeight));
     fSearch = new BTextControl("search", nullptr, "", new BMessage(kMsgSearch));
@@ -150,15 +164,24 @@ void ToolbarView::Layout()
     fPrevRect = BRect(18, cy - 13, 44, cy + 13);
     fPlayRect = BRect(54, cy - 18, 90, cy + 18);
     fNextRect = BRect(100, cy - 13, 126, cy + 13);
-    fVolumeRect = BRect(150, cy - 8, 270, cy + 8);
-    float viewWidth = 96;
-    float searchWidth = std::min(180.0f, std::max(120.0f, bounds.Width() * 0.15f));
+    // right end: search field and view buttons
+    float searchWidth = std::min(180.0f, std::max(kSearchMinWidth, bounds.Width() * 0.15f));
     fSearchRect = BRect(bounds.right - searchWidth - 14, 14, bounds.right - 14, 38);
-    fViewRect = BRect(fSearchRect.left - viewWidth - 24, 16, fSearchRect.left - 24, 36);
-    float lcdLeft = 300;
-    float lcdRight = fViewRect.left - 30;
-    float lcdWidth = std::max(260.0f, std::min(560.0f, lcdRight - lcdLeft));
+    fViewRect = BRect(fSearchRect.left - kViewWidth - kGap, 16, fSearchRect.left - kGap, 36);
+    // the volume slider sits clear of the Next button (its small speaker in between) and
+    // gives up width when the display would otherwise get cramped
+    float sliderLeft = fNextRect.right + kVolumeGap;
+    float lcdRight = fViewRect.left - kGap;
+    float room = lcdRight - (sliderLeft + kSliderWidth + kSpeakerRoom + 16);
+    float slider = kSliderWidth;
+    if (room < kLcdComfortWidth)
+        slider = std::max(kSliderMinWidth, kSliderWidth - (kLcdComfortWidth - room));
+    fVolumeRect = BRect(sliderLeft, cy - 8, sliderLeft + slider, cy + 8);
+    float lcdLeft = fVolumeRect.right + kSpeakerRoom + 16;
+    float lcdWidth = std::max(kLcdMinWidth, std::min(kLcdMaxWidth, lcdRight - lcdLeft));
     float lcdCenter = floorf((lcdLeft + lcdRight) / 2);
+    if (lcdRight - lcdLeft < kLcdMinWidth)
+        lcdCenter = floorf(lcdLeft + kLcdMinWidth / 2); // too narrow: never over the volume
     fLcdRect = BRect(lcdCenter - floorf(lcdWidth / 2), 5, lcdCenter + floorf(lcdWidth / 2), 58);
     // artwork square on the left, progress row along the bottom
     fArtRect = BRect(fLcdRect.left + 5, fLcdRect.top + 5, fLcdRect.left + 5 + 43, fLcdRect.top + 5 + 43);
@@ -258,8 +281,8 @@ void ToolbarView::DrawVolume()
     BRect r = fVolumeRect;
     float cy = (r.top + r.bottom) / 2;
     // a speaker either side of the slider: the far one carries the "louder" idea
-    icons::Draw(this, icons::kVolume, BRect(r.left - 26, cy - 8, r.left - 6, cy + 8), 11, Rgb(90, 90, 90));
-    icons::Draw(this, icons::kVolume, BRect(r.right + 4, cy - 9, r.right + 28, cy + 9), 13, Rgb(90, 90, 90));
+    icons::Draw(this, icons::kVolume, BRect(r.left - 22, cy - 8, r.left - 8, cy + 8), 11, Rgb(90, 90, 90));
+    icons::Draw(this, icons::kVolume, BRect(r.right + 8, cy - 9, r.right + kSpeakerRoom, cy + 9), 13, Rgb(90, 90, 90));
     // track
     BRect track(r.left, cy - 2, r.right, cy + 2);
     SetHighColor(0, 0, 0, 50);
