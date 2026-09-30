@@ -441,6 +441,11 @@ def preview(icon, size=256, background=None):
     image = Image.new('RGBA', (big, big), background or (0, 0, 0, 0))
     unit = big / 64.0
     for shape in icon['shapes']:
+        # Haiku leaves out shapes whose level-of-detail range does not hold the scale (the
+        # largest maximum, 4, stands for no limit)
+        low, high = shape.get('lod', (0.0, 4.0))
+        if size / 64.0 < low or (high < 4.0 and size / 64.0 > high):
+            continue
         style = icon['styles'][shape['style']]
         polys = [flatten(icon['paths'][i], shape.get('matrix', IDENTITY)) for i in shape['paths']]
         layer = Image.new('RGBA', (big, big), (0, 0, 0, 0))
