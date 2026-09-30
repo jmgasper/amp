@@ -108,6 +108,27 @@ void Player::DisableMusicAssistant()
         audio->Stop();
 }
 
+void Player::StopMusicAssistantTrack()
+{
+    std::lock_guard<std::recursive_mutex> lock(fMutex);
+    if (fCurrentIsMA && fCurrentTrack != 0)
+        Stop();
+}
+
+void Player::DropMissingTracks()
+{
+    std::lock_guard<std::recursive_mutex> lock(fMutex);
+    bool currentGone = false;
+    {
+        Library::Locker locker(fLibrary);
+        int64_t current = fCurrentTrack;
+        currentGone = current != 0 && fLibrary.TrackById(current) == nullptr;
+        fQueue.RemoveIf([this](int64_t id) { return fLibrary.TrackById(id) == nullptr; });
+    }
+    if (currentGone)
+        Stop();
+}
+
 void Player::SetState(PlayerState state)
 {
     if (fState == state)

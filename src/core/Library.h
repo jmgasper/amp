@@ -60,7 +60,10 @@ public:
     std::map<std::string, std::pair<int64_t, int64_t>> LocalFileIndex() const; // uri -> (mtime, size)
     void RebuildIndex();
     void ApplyMASync(const MASyncResult& result);
+    // Removes everything that came from Music Assistant: tracks, server playlists, album and
+    // artist records. Local playlists keep their local songs and are no longer mirrored.
     void ClearMusicAssistantData();
+    bool HasMusicAssistantData() const;
     void SetAlbumArt(const std::string& artist, const std::string& album, const ArtKey& key);
 
     // ---- playlists ----

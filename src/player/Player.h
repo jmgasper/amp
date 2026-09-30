@@ -35,6 +35,10 @@ public:
     void EnableMusicAssistant(const std::string& host, int port, const std::string& token,
         const std::string& clientId, const std::string& playerName);
     void DisableMusicAssistant();
+    // Stops playback when the current song is streamed by Music Assistant.
+    void StopMusicAssistantTrack();
+    // Takes the tracks that left the library out of the queue; stops when the current one went.
+    void DropMissingTracks();
     bool MAConnected() const { return fSendspinAudio && fSendspinAudio->Connected(); }
     std::string MAStatus();
 

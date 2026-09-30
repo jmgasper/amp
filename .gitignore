@@ -4,3 +4,4 @@ build-host/
 artifacts/
 __pycache__/
 *.pyc
+build-arm64/

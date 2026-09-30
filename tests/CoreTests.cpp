@@ -1,13 +1,24 @@
 // Unit tests for Amp's portable core. Build and run with `make check` (on Haiku) or compile
 // this file with src/core on any system with a C++17 compiler.
 #include "core/Des.h"
+#include "core/ImageCache.h"
+#include "core/Library.h"
+#include "core/MusicAssistant.h"
 #include "core/NetMD.h"
 #include "core/NetMDSimulator.h"
+#include "core/Queue.h"
 #include "core/Resampler.h"
+#include "core/Scanner.h"
+#include "core/Settings.h"
+#include "core/TagStream.h"
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <string>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 using namespace amp;
@@ -175,6 +186,410 @@ void TestProtocol()
     CHECK(rejected);
 }
 
+// ---- library, queue and scanner -------------------------------------------
+
+std::string TempFolder(const char* name)
+{
+    const char* base = getenv("TMPDIR");
+    std::string path = std::string(base && *base ? base : "/tmp") + "/amp-test-" + name + "-" + std::to_string((long)getpid());
+    std::string command = "rm -rf '" + path + "'";
+    if (system(command.c_str()) != 0)
+        fprintf(stderr, "cannot clear %s\n", path.c_str());
+    mkdir(path.c_str(), 0755);
+    return path;
+}
+
+void RemoveFolder(const std::string& path)
+{
+    std::string command = "rm -rf '" + path + "'";
+    if (system(command.c_str()) != 0)
+        fprintf(stderr, "cannot remove %s\n", path.c_str());
+}
+
+void WriteBytes(const std::string& path, const std::string& bytes)
+{
+    std::ofstream out(path, std::ios::binary);
+    out.write(bytes.data(), (std::streamsize)bytes.size());
+}
+
+// One second of silence, 8 kHz mono 16 bit: the smallest file TagLib reads a length from.
+std::string WavFile(int seconds = 1)
+{
+    uint32_t dataSize = 8000 * 2 * seconds;
+    std::string wav = "RIFF";
+    auto u32 = [&](uint32_t v) { for (int i = 0; i < 4; i++) wav += (char)(v >> (8 * i)); };
+    auto u16 = [&](uint16_t v) { for (int i = 0; i < 2; i++) wav += (char)(v >> (8 * i)); };
+    u32(36 + dataSize);
+    wav += "WAVEfmt ";
+    u32(16);
+    u16(1);
+    u16(1);
+    u32(8000);
+    u32(16000);
+    u16(2);
+    u16(16);
+    wav += "data";
+    u32(dataSize);
+    wav.append(dataSize, 0);
+    return wav;
+}
+
+Track MakeTrack(Source source, const std::string& uri, const std::string& album)
+{
+    Track track;
+    track.source = source;
+    track.uri = uri;
+    track.title = uri;
+    track.artist = "Artist";
+    track.album = album;
+    track.durationMs = 1000;
+    return track;
+}
+
+void TestQueueRemoveIf()
+{
+    PlayQueue queue;
+    queue.Set({1, 2, 3, 4, 5, 6}, 3); // playing 4
+    queue.RemoveIf([](int64_t id) { return id % 2 == 0; });
+    CHECK(queue.Size() == 3);
+    CHECK(queue.Tracks() == std::vector<int64_t>({1, 3, 5}));
+    CHECK(queue.Current() == 5); // 4 went: the song after it is current
+    queue.RemoveIf([](int64_t id) { return id == 5; });
+    CHECK(queue.Current() == 3); // nothing after it: the last one left
+    queue.RemoveIf([](int64_t) { return true; });
+    CHECK(queue.Empty());
+    CHECK(queue.Current() == 0);
+
+    PlayQueue kept;
+    kept.Set({7, 8, 9}, 1);
+    kept.RemoveIf([](int64_t id) { return id == 7; });
+    CHECK(kept.Current() == 8); // a song before the current one went: the current one stays
+    kept.RemoveIf([](int64_t) { return false; });
+    CHECK(kept.Size() == 2 && kept.Current() == 8);
+}
+
+void TestClearMusicAssistant()
+{
+    std::string folder = TempFolder("library");
+    {
+        Library library(folder + "/library.db");
+        std::string error;
+        CHECK(library.Open(error));
+        CHECK(!library.HasMusicAssistantData());
+
+        std::vector<Track> local = {MakeTrack(Source::Local, "/music/a.flac", "Local Album"),
+            MakeTrack(Source::Local, "/music/b.flac", "Local Album")};
+        std::vector<int64_t> localIds = library.UpsertTracks(local, false);
+        MASyncResult sync;
+        for (int i = 0; i < 300; i++) {
+            Track track = MakeTrack(Source::MusicAssistant, "library://track/" + std::to_string(i), "Streamed Album");
+            track.maAlbumUri = "library://album/1";
+            sync.tracks.push_back(track);
+        }
+        Track provider = MakeTrack(Source::MusicAssistant, "tidal--x://track/9", "Provider Album");
+        provider.inLibrary = false;
+        sync.tracks.push_back(provider);
+        Album album;
+        album.maUri = "library://album/1";
+        album.maItemId = "1";
+        album.name = "Streamed Album";
+        album.artist = "Artist";
+        sync.albums.push_back(album);
+        Artist artist;
+        artist.maUri = "library://artist/1";
+        artist.maItemId = "1";
+        artist.name = "Artist";
+        sync.artists.push_back(artist);
+        Playlist remote;
+        remote.source = Source::MusicAssistant;
+        remote.name = "Server Playlist";
+        remote.maItemId = "77";
+        remote.maUri = "library://playlist/77";
+        sync.playlists.push_back(remote);
+        sync.playlistTrackUris.push_back({"library://track/1", "library://track/2"});
+        library.ApplyMASync(sync);
+        CHECK(library.HasMusicAssistantData());
+        CHECK(library.TrackCount() == 303);
+
+        int64_t streamed = 0;
+        {
+            Library::Locker locker(library);
+            const Track* track = library.TrackByUri("library://track/5");
+            CHECK(track != nullptr);
+            streamed = track ? track->id : 0;
+        }
+        int64_t mixed = library.CreatePlaylist("Mixed");
+        library.AddToPlaylist(mixed, {localIds[0], streamed, localIds[1]});
+        library.LinkPlaylistToMA(mixed, "88", "library://playlist/88", true);
+        int64_t plain = library.CreatePlaylist("Plain");
+        library.AddToPlaylist(plain, {localIds[1]});
+
+        library.ClearMusicAssistantData();
+        CHECK(!library.HasMusicAssistantData());
+        CHECK(library.TrackCount() == 2);
+        CHECK(library.AllAlbumIds().size() == 1);
+        CHECK(library.AllPlaylistIds().size() == 2);
+        Library::Locker locker(library);
+        CHECK(library.TrackByUri("library://track/5") == nullptr);
+        CHECK(library.TrackByUri("tidal--x://track/9") == nullptr);
+        const Playlist* playlist = library.PlaylistById(mixed);
+        CHECK(playlist && playlist->trackIds == localIds);
+        CHECK(playlist && !playlist->syncToMA && playlist->maItemId.empty());
+        for (int64_t id : library.AllAlbumIds())
+            CHECK(!library.AlbumById(id)->isMA());
+    }
+    {
+        // and the file on disk agrees
+        Library library(folder + "/library.db");
+        std::string error;
+        CHECK(library.Open(error));
+        CHECK(!library.HasMusicAssistantData());
+        CHECK(library.TrackCount() == 2);
+        std::vector<int64_t> playlists = library.AllPlaylistIds();
+        CHECK(playlists.size() == 2);
+        Library::Locker locker(library);
+        for (int64_t id : playlists) {
+            const Playlist* playlist = library.PlaylistById(id);
+            CHECK(playlist && !playlist->isMA() && !playlist->syncToMA);
+            if (playlist && playlist->name == "Mixed")
+                CHECK(playlist->trackIds.size() == 2);
+        }
+    }
+    RemoveFolder(folder);
+}
+
+void TestTagStream()
+{
+    std::string folder = TempFolder("stream");
+    std::string bytes;
+    for (int i = 0; i < 700 * 1024 + 123; i++)
+        bytes += (char)((i * 131 + (i >> 9)) & 0xff);
+    WriteBytes(folder + "/data.bin", bytes);
+    TagStream stream(folder + "/data.bin");
+    CHECK(stream.isOpen());
+    CHECK(stream.length() == (TagLib::offset_t)bytes.size());
+    struct Read { long position; size_t length; };
+    const Read reads[] = {{0, 10}, {10, 4000}, {(long)bytes.size() - 128, 128}, {(long)bytes.size() - 160, 32},
+        {300000, 8}, {300008, 100000}, {299990, 40}, {60000, 10000}, {(long)bytes.size() - 5, 50}, {123456, 300000},
+        {0, bytes.size()}};
+    for (const Read& read : reads) {
+        stream.seek(read.position);
+        TagLib::ByteVector block = stream.readBlock(read.length);
+        size_t expected = std::min(read.length, bytes.size() - (size_t)read.position);
+        CHECK(block.size() == expected);
+        CHECK(memcmp(block.data(), bytes.data() + read.position, block.size()) == 0);
+        CHECK(stream.tell() == (TagLib::offset_t)(read.position + expected));
+    }
+    stream.seek(-16, TagLib::IOStream::End);
+    CHECK(stream.readBlock(64).size() == 16);
+    CHECK(stream.readBlock(64).isEmpty());
+    // everything was read once at most
+    CHECK(stream.BytesRead() == (off_t)bytes.size());
+    TagStream missing(folder + "/nothing.bin");
+    CHECK(!missing.isOpen());
+    CHECK(missing.readBlock(10).isEmpty());
+    RemoveFolder(folder);
+}
+
+// ---- MP4 ------------------------------------------------------------------
+
+std::string Be32(uint32_t value)
+{
+    std::string bytes;
+    for (int shift = 24; shift >= 0; shift -= 8)
+        bytes += (char)(value >> shift);
+    return bytes;
+}
+
+std::string Mp4Box(const char* type, const std::string& body)
+{
+    return Be32((uint32_t)(8 + body.size())) + type + body;
+}
+
+// An audio file in MP4: `fragments` > 0 puts the sound into that many moof/mdat pairs and
+// the length into mehd, as streaming services write their downloads.
+std::string Mp4File(const char* codec, uint32_t timescale, uint32_t duration, int fragments)
+{
+    std::string mvhd = Be32(0) + Be32(0) + Be32(0) + Be32(timescale) + Be32(fragments ? 0 : duration) + std::string(80, 0);
+    std::string mdhd = Be32(0) + Be32(0) + Be32(0) + Be32(timescale) + Be32(fragments ? 0 : duration) + Be32(0);
+    std::string hdlr = Be32(0) + Be32(0) + "soun" + std::string(12, 0) + std::string(1, 0);
+    std::string entry = Be32(36) + codec + std::string(6, 0) + std::string("\0\1", 2) + std::string(8, 0)
+        + std::string("\0\2\0\x10", 4) + std::string(4, 0) + Be32(timescale << 16);
+    std::string stsd = Be32(0) + Be32(1) + entry;
+    std::string stbl = Mp4Box("stsd", stsd) + Mp4Box("stts", Be32(0) + Be32(0)) + Mp4Box("stsc", Be32(0) + Be32(0))
+        + Mp4Box("stsz", Be32(0) + Be32(0) + Be32(0)) + Mp4Box("stco", Be32(0) + Be32(0));
+    std::string trak = Mp4Box("tkhd", std::string(84, 0))
+        + Mp4Box("mdia", Mp4Box("mdhd", mdhd) + Mp4Box("hdlr", hdlr) + Mp4Box("minf", Mp4Box("smhd", std::string(8, 0)) + Mp4Box("stbl", stbl)));
+    std::string moov = Mp4Box("mvhd", mvhd) + Mp4Box("trak", trak);
+    if (fragments)
+        moov += Mp4Box("mvex", Mp4Box("mehd", Be32(0) + Be32(duration)) + Mp4Box("trex", std::string(24, 0)));
+    std::string file = Mp4Box("ftyp", std::string("M4A ") + Be32(0) + "M4A mp42isom") + Mp4Box("moov", moov);
+    if (!fragments)
+        file += Mp4Box("mdat", std::string(20000, 'a'));
+    for (int i = 0; i < fragments; i++)
+        file += Mp4Box("moof", Mp4Box("mfhd", Be32(0) + Be32(i + 1))) + Mp4Box("mdat", std::string(20000, 'a'));
+    return file;
+}
+
+void TestMp4()
+{
+    std::string folder = TempFolder("mp4");
+    {
+        WriteBytes(folder + "/fragmented.m4a", Mp4File("fLaC", 96000, 96000 * 312, 60));
+        TagStream stream(folder + "/fragmented.m4a");
+        Mp4Info info;
+        CHECK(ReadMp4Info(stream, info));
+        CHECK(info.fragmented);
+        CHECK(info.durationMs == 312000);
+        CHECK(info.codec == "fLaC");
+        CHECK(stream.ReadCount() <= 4); // not one read for each fragment
+        Track track;
+        CHECK(Scanner::ReadTrack(folder + "/fragmented.m4a", track, nullptr, nullptr));
+        CHECK(track.durationMs == 312000);
+        CHECK(track.lossless);
+        CHECK(track.bitrate == (int)(track.sizeBytes * 8 / 312000));
+    }
+    {
+        WriteBytes(folder + "/plain.m4a", Mp4File("mp4a", 44100, 44100 * 200, 0));
+        TagStream stream(folder + "/plain.m4a");
+        Mp4Info info;
+        CHECK(ReadMp4Info(stream, info));
+        CHECK(!info.fragmented);
+        CHECK(info.durationMs == 200000);
+        CHECK(info.codec == "mp4a");
+        Track track;
+        CHECK(Scanner::ReadTrack(folder + "/plain.m4a", track, nullptr, nullptr));
+        CHECK(track.durationMs == 200000);
+        CHECK(!track.lossless);
+    }
+    {
+        // not an MP4 file at all, and one that ends inside a box
+        WriteBytes(folder + "/noise.m4a", std::string(5000, 'x'));
+        TagStream noise(folder + "/noise.m4a");
+        Mp4Info info;
+        CHECK(!ReadMp4Info(noise, info));
+        std::string cut = Mp4File("alac", 44100, 44100, 3);
+        WriteBytes(folder + "/cut.m4a", cut.substr(0, 300));
+        TagStream stream(folder + "/cut.m4a");
+        CHECK(!ReadMp4Info(stream, info));
+        Track track;
+        Scanner::ReadTrack(folder + "/cut.m4a", track, nullptr, nullptr); // must not crash
+    }
+    RemoveFolder(folder);
+}
+
+void TestScanner()
+{
+    std::string folder = TempFolder("scan");
+    std::string music = folder + "/music";
+    mkdir(music.c_str(), 0755);
+    const int kArtists = 6, kAlbums = 3, kSongs = 5;
+    // a PNG header is all the cache looks at
+    std::string picture = std::string("\x89PNG\r\n\x1a\n", 8) + std::string(64, 'x');
+    for (int a = 0; a < kArtists; a++) {
+        std::string artist = music + "/Artist " + std::to_string(a);
+        mkdir(artist.c_str(), 0755);
+        for (int b = 0; b < kAlbums; b++) {
+            std::string album = artist + "/Album " + std::to_string(b);
+            mkdir(album.c_str(), 0755);
+            for (int c = 0; c < kSongs; c++)
+                WriteBytes(album + "/0" + std::to_string(c + 1) + " Song " + std::to_string(c) + ".wav", WavFile());
+            if (b != 2)
+                WriteBytes(album + (b == 0 ? "/cover.png" : "/Folder.PNG"), picture);
+            WriteBytes(album + "/notes.txt", "not music");
+        }
+    }
+    const int kTotal = kArtists * kAlbums * kSongs;
+    {
+        Settings settings(folder + "/settings.json");
+        Library library(folder + "/library.db");
+        std::string error;
+        CHECK(library.Open(error));
+        ImageCache images(folder + "/art", settings);
+        CHECK(images.Open());
+        Scanner scanner(library, images);
+        scanner.SetWorkerCount(6);
+        std::mutex mutex;
+        std::string last;
+        bool done = false;
+        scanner.onProgress = [&](const std::string& text, bool finished) {
+            std::lock_guard<std::mutex> lock(mutex);
+            last = text;
+            done = finished;
+        };
+        auto scan = [&](bool force) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                done = false;
+            }
+            scanner.Start({music + "/"}, force);
+            while (scanner.IsRunning())
+                usleep(10000);
+            scanner.Stop();
+            std::lock_guard<std::mutex> lock(mutex);
+            CHECK(done);
+            return last;
+        };
+        std::string result = scan(false);
+        CHECK(result == "Scan finished: " + std::to_string(kTotal) + " new or changed, 0 removed");
+        CHECK(library.TrackCount() == (size_t)kTotal);
+        CHECK(library.AllAlbumIds().size() == (size_t)(kArtists * kAlbums));
+        CHECK(library.AllArtistIds().size() == (size_t)kArtists);
+        {
+            Library::Locker locker(library);
+            const Track* track = library.TrackByUri(music + "/Artist 2/Album 1/03 Song 2.wav");
+            CHECK(track != nullptr);
+            if (track) {
+                // untagged files take their names from the folders and the file
+                CHECK(track->artist == "Artist 2");
+                CHECK(track->album == "Album 1");
+                CHECK(track->title == "Song 2");
+                CHECK(track->trackNumber == 3);
+                CHECK(track->durationMs == 1000);
+                CHECK(track->lossless);
+                CHECK(images.Has(track->art));
+            }
+            const Track* bare = library.TrackByUri(music + "/Artist 2/Album 2/01 Song 0.wav");
+            CHECK(bare && !images.Has(bare->art)); // the album without a picture
+        }
+        CHECK(scan(false) == "Library up to date");
+        CHECK(scan(true) == "Scan finished: " + std::to_string(kTotal) + " new or changed, 0 removed");
+        CHECK(library.TrackCount() == (size_t)kTotal);
+
+        // one song changes, one goes, one album is added
+        WriteBytes(music + "/Artist 0/Album 0/01 Song 0.wav", WavFile(2));
+        unlink((music + "/Artist 0/Album 0/02 Song 1.wav").c_str());
+        std::string added = music + "/Artist 0/Album 9";
+        mkdir(added.c_str(), 0755);
+        WriteBytes(added + "/01 New.wav", WavFile());
+        CHECK(scan(false) == "Scan finished: 2 new or changed, 1 removed");
+        CHECK(library.TrackCount() == (size_t)kTotal);
+        {
+            Library::Locker locker(library);
+            const Track* changed = library.TrackByUri(music + "/Artist 0/Album 0/01 Song 0.wav");
+            CHECK(changed && changed->durationMs == 2000);
+            CHECK(library.TrackByUri(music + "/Artist 0/Album 0/02 Song 1.wav") == nullptr);
+            CHECK(library.TrackByUri(added + "/01 New.wav") != nullptr);
+        }
+
+        // a library folder that cannot be read (a share that is not mounted) keeps its songs
+        std::string away = folder + "/music-away";
+        CHECK(rename(music.c_str(), away.c_str()) == 0);
+        CHECK(scan(false) == "Library up to date");
+        CHECK(library.TrackCount() == (size_t)kTotal);
+        mkdir(music.c_str(), 0755);
+        CHECK(scan(false) == "Library up to date"); // mounted, but empty
+        CHECK(library.TrackCount() == (size_t)kTotal);
+        rmdir(music.c_str());
+        CHECK(rename(away.c_str(), music.c_str()) == 0);
+        // a folder that was deleted takes its songs along
+        RemoveFolder(music + "/Artist 5");
+        CHECK(scan(false) == "Scan finished: 0 new or changed, " + std::to_string(kAlbums * kSongs) + " removed");
+        CHECK(library.TrackCount() == (size_t)(kTotal - kAlbums * kSongs));
+    }
+    RemoveFolder(folder);
+}
+
 } // namespace
 
 int main()
@@ -183,6 +598,11 @@ int main()
     TestTitles();
     TestResampler();
     TestProtocol();
+    TestQueueRemoveIf();
+    TestClearMusicAssistant();
+    TestTagStream();
+    TestMp4();
+    TestScanner();
     if (gFailures) {
         fprintf(stderr, "%d check(s) failed\n", gFailures);
         return 1;

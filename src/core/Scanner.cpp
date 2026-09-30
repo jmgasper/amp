@@ -1,14 +1,21 @@
 #include "Scanner.h"
 #include "ImageCache.h"
 #include "Library.h"
+#include "TagStream.h"
+#include "Workers.h"
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <dirent.h>
 #include <fstream>
 #include <map>
 #include <sstream>
 #include <sys/stat.h>
+#include <unordered_set>
 
 #include <taglib/aifffile.h>
 #include <taglib/fileref.h>
@@ -25,8 +32,42 @@ namespace amp {
 namespace {
 
 const char* kExtensions[] = {".mp3", ".mp4", ".m4a", ".m4b", ".aac", ".flac", ".wav", ".wave", ".ogg", ".oga", ".opus", nullptr};
+// cover pictures next to the songs, best first; compared without regard to case
 const char* kFolderArt[] = {"cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png",
-    "album.jpg", "album.png", "Cover.jpg", "Folder.jpg", "artwork.jpg", "artwork.png", nullptr};
+    "album.jpg", "album.png", "artwork.jpg", "artwork.png", nullptr};
+
+const size_t kBatch = 200;               // tracks written to the library in one transaction
+const int64_t kRebuildInterval = 3000;   // ms between two rebuilds of the index while scanning
+const int64_t kProgressInterval = 250;   // ms between two progress reports
+const int kMostWorkers = 8;
+
+int64_t NowMs()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// Position of `name` in kFolderArt, or -1.
+int FolderArtRank(const std::string& name)
+{
+    std::string lower = ToLower(name);
+    for (int i = 0; kFolderArt[i]; i++)
+        if (lower == kFolderArt[i])
+            return i;
+    return -1;
+}
+
+bool IsUnder(const std::string& path, const std::string& folder)
+{
+    if (folder == "/")
+        return true;
+    return path.size() > folder.size() && path.compare(0, folder.size(), folder) == 0 && path[folder.size()] == '/';
+}
+
+std::string FolderOf(const std::string& path)
+{
+    size_t slash = path.rfind('/');
+    return slash == std::string::npos ? "" : path.substr(0, slash);
+}
 
 std::string Extension(const std::string& path)
 {
@@ -49,7 +90,7 @@ std::string FirstProperty(const TagLib::PropertyMap& props, const char* key)
     return it->second.front().to8Bit(true);
 }
 
-std::string ReadFile(const std::string& path)
+std::string ReadFileBytes(const std::string& path)
 {
     std::ifstream in(path, std::ios::binary);
     if (!in)
@@ -87,11 +128,28 @@ bool Scanner::ReadTrack(const std::string& path, Track& track, std::string* embe
     struct stat st;
     if (stat(path.c_str(), &st) != 0)
         return false;
+    return ReadTrack(path, st.st_size, st.st_mtime, track, embeddedArt, embeddedMime);
+}
+
+bool Scanner::ReadTrack(const std::string& path, int64_t size, int64_t modified, Track& track,
+    std::string* embeddedArt, std::string* embeddedMime, const std::function<bool(const Track&)>& wantArt)
+{
+    if (!IsAudioFile(path))
+        return false;
     track.source = Source::Local;
     track.uri = path;
-    track.sizeBytes = st.st_size;
-    track.modifiedTime = st.st_mtime;
-    TagLib::FileRef file(path.c_str(), true, TagLib::AudioProperties::Fast);
+    track.sizeBytes = size;
+    track.modifiedTime = modified;
+    TagStream stream(path);
+    if (!stream.isOpen())
+        return false;
+    std::string extension = Extension(path);
+    Mp4Info mp4;
+    bool isMp4 = (extension == ".m4a" || extension == ".mp4" || extension == ".m4b") && ReadMp4Info(stream, mp4);
+    // everything TagLib needs is in the moov box; the fragments behind it hold the sound
+    if (isMp4 && mp4.fragmented)
+        stream.SetLength(mp4.moovEnd);
+    TagLib::FileRef file(&stream, true, TagLib::AudioProperties::Fast);
     if (file.isNull()) {
         // still list the file by name so the user sees it
         size_t slash = path.rfind('/');
@@ -139,6 +197,14 @@ bool Scanner::ReadTrack(const std::string& path, Track& track, std::string* embe
             track.lossless = properties && properties->codec() == TagLib::MP4::Properties::ALAC;
         }
     }
+    if (isMp4) {
+        if (mp4.fragmented || track.durationMs <= 0) {
+            track.durationMs = mp4.durationMs;
+            track.bitrate = 0; // TagLib saw the file without its sound
+        }
+        if (mp4.codec == "alac" || mp4.codec == "fLaC")
+            track.lossless = true;
+    }
     if (track.bitrate <= 0 && track.durationMs > 0)
         track.bitrate = (int)(track.sizeBytes * 8 / track.durationMs); // bytes*8/ms == kbit/s
     if (track.title.empty()) {
@@ -180,7 +246,7 @@ bool Scanner::ReadTrack(const std::string& path, Track& track, std::string* embe
                 track.artist = artistName;
         }
     }
-    if (embeddedArt) {
+    if (embeddedArt && (!wantArt || wantArt(track))) {
         TagLib::List<TagLib::VariantMap> pictures = file.complexProperties("PICTURE");
         for (const TagLib::VariantMap& picture : pictures) {
             auto data = picture.find("data");
@@ -217,111 +283,233 @@ void Scanner::Stop()
     fRunning = false;
 }
 
-void Scanner::Walk(const std::string& folder, std::vector<std::string>& files)
+int Scanner::WorkerCount() const
 {
-    DIR* dir = opendir(folder.c_str());
-    if (!dir)
-        return;
-    std::vector<std::string> subfolders;
-    while (struct dirent* entry = readdir(dir)) {
-        if (fStop)
-            break;
-        std::string name = entry->d_name;
-        if (name == "." || name == ".." || name.empty() || name[0] == '.')
-            continue;
-        std::string path = folder + "/" + name;
-        struct stat st;
-        if (stat(path.c_str(), &st) != 0)
-            continue;
-        if (S_ISDIR(st.st_mode))
-            subfolders.push_back(path);
-        else if (S_ISREG(st.st_mode) && IsAudioFile(path))
-            files.push_back(path);
+    if (fWorkerCount > 0)
+        return fWorkerCount;
+    // reading tags is waiting for the disk or the server: two workers pay off even on one
+    // processor, more than eight only crowd the server
+    return std::max(2, std::min(kMostWorkers, ProcessorCount()));
+}
+
+void Scanner::Walk(const std::vector<std::string>& folders, int workers, Pass& pass)
+{
+    std::mutex mutex;
+    std::condition_variable wake;
+    std::deque<std::string> waiting(folders.begin(), folders.end());
+    int listing = 0; // workers inside a folder, which may still add subfolders
+    RunWorkers(workers, "Amp folder walk", [&](int) {
+        while (true) {
+            std::string folder;
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                wake.wait(lock, [&] { return fStop || !waiting.empty() || listing == 0; });
+                if (fStop || waiting.empty()) {
+                    wake.notify_all();
+                    return;
+                }
+                folder = std::move(waiting.front());
+                waiting.pop_front();
+                listing++;
+            }
+            std::vector<std::string> subfolders;
+            std::vector<FoundFile> files;
+            std::string art;
+            int artRank = -1;
+            bool isRoot = std::find(folders.begin(), folders.end(), folder) != folders.end();
+            bool unreadable = false;
+            int entries = 0;
+            DIR* dir = opendir(folder.c_str());
+            // a folder that is gone took its songs along; one that cannot be read (a share
+            // that dropped out) says nothing about them
+            if (!dir)
+                unreadable = isRoot || errno != ENOENT;
+            if (dir) {
+                while (struct dirent* entry = readdir(dir)) {
+                    if (fStop)
+                        break;
+                    std::string name = entry->d_name;
+                    if (name.empty() || name[0] == '.')
+                        continue;
+                    entries++;
+                    std::string path = folder + "/" + name;
+                    struct stat st;
+                    if (stat(path.c_str(), &st) != 0)
+                        continue;
+                    if (S_ISDIR(st.st_mode)) {
+                        subfolders.push_back(path);
+                    } else if (S_ISREG(st.st_mode)) {
+                        if (IsAudioFile(path)) {
+                            files.push_back({path, (int64_t)st.st_mtime, (int64_t)st.st_size});
+                        } else if (st.st_size > 0) {
+                            int rank = FolderArtRank(name);
+                            if (rank >= 0 && (artRank < 0 || rank < artRank)) {
+                                artRank = rank;
+                                art = path;
+                            }
+                        }
+                    }
+                }
+                closedir(dir);
+                // an empty library folder is a share that is not mounted more often than a
+                // collection that was deleted
+                if (isRoot && entries == 0)
+                    unreadable = true;
+            }
+            std::lock_guard<std::mutex> lock(mutex);
+            if (unreadable)
+                pass.unreadable.push_back(folder);
+            for (FoundFile& file : files)
+                pass.files.push_back(std::move(file));
+            if (!art.empty())
+                pass.folderArt[folder] = art;
+            for (std::string& sub : subfolders)
+                waiting.push_back(std::move(sub));
+            listing--;
+            wake.notify_all();
+        }
+    });
+    // the workers finish in any order: sort, so that the songs of an album are read together
+    std::sort(pass.files.begin(), pass.files.end(), [](const FoundFile& a, const FoundFile& b) { return a.path < b.path; });
+    pass.files.erase(std::unique(pass.files.begin(), pass.files.end(),
+        [](const FoundFile& a, const FoundFile& b) { return a.path == b.path; }), pass.files.end());
+}
+
+void Scanner::ReadFile(const FoundFile& file, Pass& pass)
+{
+    Track track;
+    std::string art, mime;
+    ArtKey key;
+    bool claimed = false;
+    // The picture of an album is stored once, by the first worker that gets to one of its
+    // songs; the others do not even copy theirs out of the tags.
+    auto wantArt = [&](const Track& read) {
+        std::string artist = read.groupingArtist();
+        key = MakeAlbumArtKey(artist.empty() ? "Unknown Artist" : artist, read.album.empty() ? "Unknown Album" : read.album);
+        if (fImages.Has(key))
+            return false;
+        std::lock_guard<std::mutex> lock(pass.mutex);
+        claimed = pass.artClaimed.insert(key).second;
+        return claimed;
+    };
+    bool read = ReadTrack(file.path, file.size, file.modified, track, &art, &mime, wantArt);
+    if (read && key.empty())
+        wantArt(track); // no tags at all: the names came from the folders
+    if (read && track.durationMs <= 0 && durationProbe) {
+        std::lock_guard<std::mutex> lock(pass.probeMutex);
+        track.durationMs = durationProbe(file.path);
+        if (track.bitrate <= 0 && track.durationMs > 0)
+            track.bitrate = (int)(track.sizeBytes * 8 / track.durationMs);
     }
-    closedir(dir);
-    std::sort(subfolders.begin(), subfolders.end());
-    for (const std::string& sub : subfolders)
-        Walk(sub, files);
+    if (read) {
+        track.art = key;
+        if (claimed) {
+            bool stored = false;
+            if (!art.empty())
+                stored = fImages.Store(key, art, mime);
+            if (!stored) {
+                std::string picture;
+                {
+                    std::lock_guard<std::mutex> lock(pass.mutex);
+                    auto found = pass.folderArt.find(FolderOf(file.path));
+                    if (found != pass.folderArt.end())
+                        picture = found->second;
+                }
+                if (!picture.empty()) {
+                    std::string bytes = ReadFileBytes(picture);
+                    if (!bytes.empty())
+                        stored = fImages.Store(key, bytes, Extension(picture) == ".png" ? "image/png" : "image/jpeg");
+                }
+            }
+            if (!stored) {
+                // nothing here: another song of the album may carry the picture
+                std::lock_guard<std::mutex> lock(pass.mutex);
+                pass.artClaimed.erase(key);
+            }
+        }
+    }
+    bool flush = false;
+    {
+        std::lock_guard<std::mutex> lock(pass.mutex);
+        if (read) {
+            pass.pending.push_back(std::move(track));
+            pass.added++;
+        }
+        flush = pass.pending.size() >= kBatch;
+    }
+    pass.processed++;
+    if (flush)
+        Flush(pass, false);
+    ReportProgress(pass);
+}
+
+void Scanner::Flush(Pass& pass, bool everything)
+{
+    std::vector<Track> batch;
+    bool rebuild = false;
+    {
+        std::lock_guard<std::mutex> lock(pass.mutex);
+        if (pass.pending.empty() || (!everything && pass.pending.size() < kBatch))
+            return;
+        batch.swap(pass.pending);
+        // the views reload after every rebuild: often enough to watch the library grow,
+        // not so often that the scan waits for the index
+        int64_t now = NowMs();
+        if (!everything && now - pass.lastRebuild >= kRebuildInterval) {
+            pass.lastRebuild = now;
+            rebuild = true;
+        }
+    }
+    fLibrary.UpsertTracks(batch, rebuild);
+}
+
+void Scanner::ReportProgress(Pass& pass)
+{
+    if (!onProgress)
+        return;
+    {
+        std::lock_guard<std::mutex> lock(pass.mutex);
+        int64_t now = NowMs();
+        if (now - pass.lastProgress < kProgressInterval)
+            return;
+        pass.lastProgress = now;
+    }
+    onProgress("Scanning: " + std::to_string(pass.processed.load()) + " of " + std::to_string(pass.files.size()) + " files", false);
 }
 
 void Scanner::Run(std::vector<std::string> folders, bool force)
 {
     if (onProgress)
         onProgress("Scanning folders", false);
-    std::vector<std::string> files;
-    for (const std::string& folder : folders) {
-        std::string clean = folder;
-        while (clean.size() > 1 && clean.back() == '/')
-            clean.pop_back();
-        Walk(clean, files);
-    }
+    for (std::string& folder : folders)
+        while (folder.size() > 1 && folder.back() == '/')
+            folder.pop_back();
+    int workers = WorkerCount();
+    Pass pass;
+    Walk(folders, workers, pass);
+
     std::map<std::string, std::pair<int64_t, int64_t>> known = fLibrary.LocalFileIndex();
-    std::map<std::string, bool> present;
-    std::vector<Track> batch;
-    std::map<std::string, std::string> folderArtChecked; // folder -> art key ("" when none)
-    int processed = 0;
-    int added = 0;
-    for (const std::string& path : files) {
-        if (fStop)
-            break;
-        present[path] = true;
-        struct stat st;
-        if (stat(path.c_str(), &st) != 0)
-            continue;
-        auto it = known.find(path);
-        if (!force && it != known.end() && it->second.first == st.st_mtime && it->second.second == st.st_size) {
-            processed++;
-            continue;
-        }
-        Track track;
-        std::string art, mime;
-        if (!ReadTrack(path, track, &art, &mime))
-            continue;
-        if (track.durationMs <= 0 && durationProbe) {
-            track.durationMs = durationProbe(path);
-            if (track.bitrate <= 0 && track.durationMs > 0)
-                track.bitrate = (int)(track.sizeBytes * 8 / track.durationMs);
-        }
-        std::string artist = track.groupingArtist();
-        ArtKey key = MakeAlbumArtKey(artist.empty() ? "Unknown Artist" : artist, track.album.empty() ? "Unknown Album" : track.album);
-        track.art = key;
-        if (!art.empty()) {
-            if (!fImages.Has(key))
-                fImages.Store(key, art, mime);
-        } else {
-            std::string folder = path.substr(0, path.rfind('/'));
-            auto checked = folderArtChecked.find(folder);
-            if (checked == folderArtChecked.end()) {
-                std::string found;
-                for (int i = 0; kFolderArt[i]; i++) {
-                    std::string candidate = folder + "/" + kFolderArt[i];
-                    struct stat artStat;
-                    if (stat(candidate.c_str(), &artStat) == 0 && artStat.st_size > 0) {
-                        found = candidate;
-                        break;
-                    }
-                }
-                folderArtChecked[folder] = found;
-                checked = folderArtChecked.find(folder);
-            }
-            if (!checked->second.empty() && !fImages.Has(key)) {
-                std::string bytes = ReadFile(checked->second);
-                if (!bytes.empty())
-                    fImages.Store(key, bytes, Extension(checked->second) == ".png" ? "image/png" : "image/jpeg");
-            }
-        }
-        batch.push_back(track);
-        processed++;
-        added++;
-        if (batch.size() >= 40) {
-            fLibrary.UpsertTracks(batch, true);
-            batch.clear();
-            if (onProgress)
-                onProgress("Scanning: " + std::to_string(processed) + " of " + std::to_string(files.size()) + " files", false);
-        }
+    std::unordered_set<std::string> present;
+    for (const FoundFile& file : pass.files) {
+        present.insert(file.path);
+        auto it = known.find(file.path);
+        if (!force && it != known.end() && it->second.first == file.modified && it->second.second == file.size)
+            pass.processed++;
+        else
+            pass.changed.push_back(&file);
     }
-    if (!batch.empty())
-        fLibrary.UpsertTracks(batch, false);
+    pass.lastRebuild = NowMs();
+    if (!pass.changed.empty() && !fStop) {
+        RunWorkers(std::min(workers, (int)pass.changed.size()), "Amp tag reader", [&](int) {
+            while (!fStop) {
+                size_t index = pass.next++;
+                if (index >= pass.changed.size())
+                    return;
+                ReadFile(*pass.changed[index], pass);
+            }
+        });
+    }
+    Flush(pass, true);
     // remove files that disappeared (only when the scan was not interrupted)
     std::vector<std::string> missing;
     if (!fStop) {
@@ -329,15 +517,20 @@ void Scanner::Run(std::vector<std::string> folders, bool force)
             if (!present.count(entry.first)) {
                 bool underFolder = false;
                 for (const std::string& folder : folders)
-                    if (entry.first.compare(0, folder.size(), folder) == 0)
+                    if (IsUnder(entry.first, folder))
                         underFolder = true;
+                for (const std::string& folder : pass.unreadable)
+                    if (IsUnder(entry.first, folder))
+                        underFolder = false;
                 if (underFolder)
                     missing.push_back(entry.first);
             }
     }
     if (!missing.empty())
         fLibrary.RemoveTracksByUri(missing, false);
-    fLibrary.RebuildIndex();
+    int added = pass.added;
+    if (added || !missing.empty())
+        fLibrary.RebuildIndex();
     fRunning = false;
     if (onProgress)
         onProgress(added || missing.size() ? "Scan finished: " + std::to_string(added) + " new or changed, "

@@ -17,6 +17,7 @@ enum {
     kMsgScanProgress = 'scpr',        // "text" string, "done" bool
     kMsgArtReady = 'arrd',            // "key" string, "path" string
     kMsgMASyncDone = 'masd',          // "error" string
+    kMsgMACleared = 'macl',           // Music Assistant was switched off and its content removed
     kMsgPlaylistLoading = 'plld',     // "playlist" int64, "loading" bool
     // UI actions
     kMsgPlayPause = 'play',

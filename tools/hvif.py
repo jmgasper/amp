@@ -502,6 +502,8 @@ def _gradient_layer(style, big, unit):
                 t = math.hypot(gx, gy) / 64.0
             elif style['gradient'] == GRADIENT_DIAMOND:
                 t = max(abs(gx), abs(gy)) / 64.0
+            elif style['gradient'] == GRADIENT_CONIC:
+                t = abs(math.atan2(gy, gx)) / math.pi
             else:
                 t = (gx + 64.0) / 128.0
             t = max(0.0, min(1.0, t))

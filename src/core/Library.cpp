@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <iterator>
 #include <sqlite3.h>
 
 namespace amp {
@@ -701,21 +702,64 @@ void Library::ApplyMASync(const MASyncResult& result)
     RebuildIndex();
 }
 
+bool Library::HasMusicAssistantData() const
+{
+    std::lock_guard<std::recursive_mutex> lock(fMutex);
+    if (!fMAAlbums.empty() || !fMAArtists.empty())
+        return true;
+    for (auto& entry : fPlaylists)
+        if (entry.second.isMA())
+            return true;
+    for (auto& entry : fTracks)
+        if (entry.second.isMA())
+            return true;
+    return false;
+}
+
 void Library::ClearMusicAssistantData()
 {
     std::lock_guard<std::recursive_mutex> lock(fMutex);
-    std::vector<std::string> uris;
-    for (auto& entry : fTracks)
-        if (entry.second.source == Source::MusicAssistant)
-            uris.push_back(entry.second.uri);
-    RemoveTracksByUri(uris, false);
-    std::vector<int64_t> removed;
-    for (auto& entry : fPlaylists)
-        if (entry.second.source == Source::MusicAssistant)
-            removed.push_back(entry.first);
-    for (int64_t id : removed)
-        DeletePlaylist(id);
-    Exec("DELETE FROM ma_albums; DELETE FROM ma_artists;");
+    // Local playlists lose their streamed songs and their link to the server: a mirror that
+    // stayed linked would replace the server's copy with what is left here on its next sync.
+    std::vector<int64_t> changed;
+    for (auto& entry : fPlaylists) {
+        Playlist& playlist = entry.second;
+        if (playlist.isMA())
+            continue;
+        size_t before = playlist.trackIds.size();
+        playlist.trackIds.erase(std::remove_if(playlist.trackIds.begin(), playlist.trackIds.end(), [this](int64_t id) {
+            auto track = fTracks.find(id);
+            return track != fTracks.end() && track->second.isMA();
+        }), playlist.trackIds.end());
+        bool linked = playlist.syncToMA || !playlist.maItemId.empty() || !playlist.maUri.empty();
+        if (playlist.trackIds.size() == before && !linked)
+            continue;
+        playlist.syncToMA = false;
+        playlist.maItemId.clear();
+        playlist.maUri.clear();
+        changed.push_back(entry.first);
+    }
+    // Whole tables at once: a library of tens of thousands of streamed tracks would take
+    // minutes when every track is looked up in the playlists on its own.
+    const std::string source = std::to_string((int)Source::MusicAssistant);
+    Exec("BEGIN");
+    Exec(("DELETE FROM playlist_tracks WHERE playlist_id IN (SELECT id FROM playlists WHERE source = " + source + ")").c_str());
+    Exec(("DELETE FROM playlists WHERE source = " + source).c_str());
+    Exec(("DELETE FROM tracks WHERE source = " + source).c_str());
+    Exec("DELETE FROM ma_albums");
+    Exec("DELETE FROM ma_artists");
+    Exec("COMMIT");
+    for (int64_t id : changed)
+        SavePlaylist(fPlaylists[id]);
+    for (auto it = fPlaylists.begin(); it != fPlaylists.end();)
+        it = it->second.isMA() ? fPlaylists.erase(it) : std::next(it);
+    for (auto it = fTracks.begin(); it != fTracks.end();) {
+        if (it->second.isMA()) {
+            fTrackByUri.erase(it->second.uri);
+            it = fTracks.erase(it);
+        } else
+            ++it;
+    }
     fMAAlbums.clear();
     fMAArtists.clear();
     RebuildIndex();

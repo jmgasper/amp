@@ -7,6 +7,10 @@
 #include <Shape.h>
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <memory>
+#include <tuple>
+#include <vector>
 
 namespace amp {
 
@@ -65,6 +69,9 @@ void DrawNoteIcon(BView* view, BRect rect, rgb_color color)
 
 void DrawMiniDisc(BView* view, BRect rect, rgb_color body, rgb_color shutter, bool detailed)
 {
+    if (detailed ? icons::DrawPicture(view, icons::kMiniDiscPicture, rect)
+            : icons::DrawGlyph(view, icons::kMiniDiscGlyph, rect, body))
+        return;
     float side = floorf(std::min(rect.Width(), rect.Height()));
     float left = floorf(rect.left + (rect.Width() - side) / 2);
     float top = floorf(rect.top + (rect.Height() - side) / 2);
@@ -162,20 +169,90 @@ void DrawArtPlaceholder(BView* view, BRect rect)
     DrawNoteIcon(view, note, theme::kArtPlaceholderNote);
 }
 
-void DrawBitmapFitted(BView* view, const BBitmap* bitmap, BRect rect)
+BRect FittedRect(const BBitmap* bitmap, BRect rect)
 {
-    if (!bitmap) {
-        DrawArtPlaceholder(view, rect);
-        return;
-    }
+    if (!bitmap)
+        return rect;
     BRect bounds = bitmap->Bounds();
     float scale = std::min((rect.Width() + 1) / (bounds.Width() + 1), (rect.Height() + 1) / (bounds.Height() + 1));
     float w = (bounds.Width() + 1) * scale;
     float h = (bounds.Height() + 1) * scale;
     BRect dest(0, 0, w - 1, h - 1);
     dest.OffsetTo(rect.left + (rect.Width() + 1 - w) / 2, rect.top + (rect.Height() + 1 - h) / 2);
+    return dest;
+}
+
+void DrawBitmapFitted(BView* view, const BBitmap* bitmap, BRect rect)
+{
+    if (!bitmap) {
+        DrawArtPlaceholder(view, rect);
+        return;
+    }
     view->SetDrawingMode(B_OP_COPY);
-    view->DrawBitmap(bitmap, bounds, dest, B_FILTER_BITMAP_BILINEAR);
+    view->DrawBitmap(bitmap, bitmap->Bounds(), FittedRect(bitmap, rect), B_FILTER_BITMAP_BILINEAR);
+}
+
+namespace {
+
+// How much of a blurred edge at 0 covers the point `x` pixels inside it (negative: outside).
+float EdgeCover(float x, float sigma)
+{
+    return 0.5f * (1.0f + erff(x / (sigma * (float)M_SQRT2)));
+}
+
+// The shadow of a sheet of the given size as a picture: black, with the blur in its alpha.
+// The pictures are kept, a grid draws the same few sizes over and over.
+const BBitmap* ShadowBitmap(int width, int height, int blur, uint8 strength)
+{
+    // never deleted: at exit the connection to the app_server, which a bitmap needs to go
+    // away, is closed before static objects are destroyed
+    static auto& cache = *new std::map<std::tuple<int, int, int, int>, std::unique_ptr<BBitmap>>;
+    auto key = std::make_tuple(width, height, blur, (int)strength);
+    auto found = cache.find(key);
+    if (found != cache.end())
+        return found->second.get();
+    if (cache.size() >= 24)
+        cache.clear();
+    int w = width + 2 * blur, h = height + 2 * blur;
+    std::unique_ptr<BBitmap> bitmap(new BBitmap(BRect(0, 0, w - 1, h - 1), B_RGBA32));
+    if (bitmap->InitCheck() != B_OK)
+        return nullptr;
+    float sigma = blur / 2.6f;
+    std::vector<float> across(w), down(h);
+    for (int x = 0; x < w; x++)
+        across[x] = EdgeCover(x + 0.5f - blur, sigma) - EdgeCover(x + 0.5f - blur - width, sigma);
+    for (int y = 0; y < h; y++)
+        down[y] = EdgeCover(y + 0.5f - blur, sigma) - EdgeCover(y + 0.5f - blur - height, sigma);
+    uint8* bits = (uint8*)bitmap->Bits();
+    int32 rowBytes = bitmap->BytesPerRow();
+    for (int y = 0; y < h; y++) {
+        uint8* pixel = bits + y * rowBytes;
+        for (int x = 0; x < w; x++, pixel += 4) {
+            pixel[0] = pixel[1] = pixel[2] = 0;
+            pixel[3] = (uint8)(strength * across[x] * down[y] + 0.5f);
+        }
+    }
+    const BBitmap* result = bitmap.get();
+    cache[key] = std::move(bitmap);
+    return result;
+}
+
+} // namespace
+
+void DrawSoftShadow(BView* view, BRect rect, float blur, float drop, uint8 strength)
+{
+    int width = (int)floorf(rect.Width() + 1.5f), height = (int)floorf(rect.Height() + 1.5f);
+    int spread = std::max(1, (int)ceilf(blur));
+    if (width < 1 || height < 1)
+        return;
+    const BBitmap* shadow = ShadowBitmap(width, height, spread, strength);
+    if (!shadow)
+        return;
+    view->PushState();
+    view->SetDrawingMode(B_OP_ALPHA);
+    view->SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+    view->DrawBitmap(shadow, BPoint(floorf(rect.left) - spread, floorf(rect.top) - spread + drop));
+    view->PopState();
 }
 
 BString TruncateToWidth(const BView* view, const char* text, float width)

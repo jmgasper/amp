@@ -7,12 +7,13 @@
 #include <PopUpMenu.h>
 #include <ScrollBar.h>
 #include <Window.h>
+#include <cmath>
 
 namespace amp {
 
 namespace {
 const float kCellWidth = 172.0f;
-const float kCellHeight = 212.0f;
+const float kCellHeight = 216.0f;
 const float kArt = 140.0f;
 const float kPadding = 12.0f;
 }
@@ -135,26 +136,29 @@ void AlbumGridView::Draw(BRect updateRect)
         }
         ArtRequest request = App()->Art().RequestFor(album.artKey, album.artist, album.name, album.localHint, false);
         BBitmap* bitmap = App()->Art().Get(album.artKey, (int)kArt, &request);
-        SetDrawingMode(B_OP_ALPHA);
-        SetHighColor(0, 0, 0, 50);
-        FillRect(art.OffsetByCopy(2, 3));
-        SetDrawingMode(B_OP_COPY);
+        // the cover lies on the page: a soft shadow below it, a hairline to hold a pale cover
+        BRect shown = FittedRect(bitmap, art);
+        shown = BRect(floorf(shown.left), floorf(shown.top), ceilf(shown.right), ceilf(shown.bottom));
+        DrawSoftShadow(this, shown);
         DrawBitmapFitted(this, bitmap, art);
-        SetHighColor(150, 150, 150);
-        StrokeRect(art);
+        SetDrawingMode(B_OP_ALPHA);
+        SetHighColor(0, 0, 0, 46);
+        StrokeRect(shown);
+        SetDrawingMode(B_OP_COPY);
         if (album.isMA)
             DrawMABadge(this, BPoint(art.left + 5, art.top + 5), 12);
         SetFont(&bold);
         SetHighColor(selected ? theme::kSelectedText : theme::kListText);
-        DrawTruncated(this, album.name.c_str(), BRect(cell.left + 6, art.bottom + 6, cell.right - 6, art.bottom + 22), B_ALIGN_CENTER, 0);
+        float text = art.bottom + 10; // below the shadow
+        DrawTruncated(this, album.name.c_str(), BRect(cell.left + 6, text, cell.right - 6, text + 16), B_ALIGN_CENTER, 0);
         SetFont(&plain);
         SetHighColor(selected ? theme::kSelectedText : theme::kListSecondaryText);
-        DrawTruncated(this, album.artist.c_str(), BRect(cell.left + 6, art.bottom + 22, cell.right - 6, art.bottom + 38), B_ALIGN_CENTER, 0);
+        DrawTruncated(this, album.artist.c_str(), BRect(cell.left + 6, text + 16, cell.right - 6, text + 32), B_ALIGN_CENTER, 0);
         BString info;
         info << (int)album.trackIds.size() << (album.trackIds.size() == 1 ? " song" : " songs");
         if (album.year > 0)
             info << " · " << album.year;
-        DrawTruncated(this, info.String(), BRect(cell.left + 6, art.bottom + 38, cell.right - 6, art.bottom + 54), B_ALIGN_CENTER, 0);
+        DrawTruncated(this, info.String(), BRect(cell.left + 6, text + 32, cell.right - 6, text + 48), B_ALIGN_CENTER, 0);
     }
 }
 

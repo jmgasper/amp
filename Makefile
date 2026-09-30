@@ -14,10 +14,11 @@ PLAYER_OBJ = $(PLAYER:%.cpp=$(BUILD)/%.o)
 UI_OBJ = $(UI:%.cpp=$(BUILD)/%.o)
 CORE_LIBS = -lcurl -lsqlite3 -ltag -lnetwork -lpthread
 LIBS = -lbe -lmedia -ldevice -ltranslation -ltracker -llocalestub $(CORE_LIBS)
-.PHONY: all core player package clean icon check mdtool
+.PHONY: all core player package clean icon check mdtool scantool
 all: $(BUILD)/Amp
 core: $(CORE_OBJ)
-$(BUILD)/Amp: $(CORE_OBJ) $(PLAYER_OBJ) $(UI_OBJ) resources/Amp.rdef resources/branding/amp-icon.hvif
+IMAGES = $(wildcard resources/images/*.png)
+$(BUILD)/Amp: $(CORE_OBJ) $(PLAYER_OBJ) $(UI_OBJ) resources/Amp.rdef resources/branding/amp-icon.hvif $(IMAGES)
 	$(CXX) -o $@.new $(CORE_OBJ) $(PLAYER_OBJ) $(UI_OBJ) $(LIBS)
 	rc -o $(BUILD)/Amp.rsrc resources/Amp.rdef
 	xres -o $@.new $(BUILD)/Amp.rsrc
@@ -34,11 +35,16 @@ check: $(BUILD)/amp_core_tests
 mdtool: $(BUILD)/mdtool
 $(BUILD)/mdtool: $(CORE_OBJ) $(BUILD)/src/player/NetMDUsb.o $(BUILD)/src/player/MiniDiscPcm.o $(BUILD)/tools/mdtool.o
 	$(CXX) -o $@ $^ -lbe -lmedia -ldevice $(CORE_LIBS)
+# times the library scanner on real folders, with a scratch library
+scantool: $(BUILD)/scantool
+$(BUILD)/scantool: $(CORE_OBJ) $(BUILD)/tools/scantool.o
+	$(CXX) -o $@ $^ $(CORE_LIBS)
 icon:
 	python3 tools/make-icon.py resources/branding/amp-icon.hvif resources/branding/amp-icon-preview.png
+	python3 tools/make-images.py
 package: all
 	bash tools/package-haiku.sh
 clean:
 	rm -rf $(BUILD)
--include $(CORE_OBJ:.o=.d) $(PLAYER_OBJ:.o=.d) $(UI_OBJ:.o=.d) $(BUILD)/tests/CoreTests.d $(BUILD)/tools/mdtool.d
+-include $(CORE_OBJ:.o=.d) $(PLAYER_OBJ:.o=.d) $(UI_OBJ:.o=.d) $(BUILD)/tests/CoreTests.d $(BUILD)/tools/mdtool.d $(BUILD)/tools/scantool.d
 player: $(PLAYER_OBJ)

@@ -12,13 +12,14 @@
 #include <Path.h>
 #include <Roster.h>
 #include <cstdio>
+#include <cstdlib>
 #include <thread>
 
 namespace amp {
 
 namespace {
 const char* kSignature = "application/x-vnd.Amp";
-const int kScannerVersion = 2; // 2: lossless flag and estimated bit rates
+const int kScannerVersion = 3; // 2: lossless flag and estimated bit rates; 3: FLAC in MP4 is lossless
 
 // The app used to be called TasAmp. Move the old user data over once so the
 // Music Assistant account, library and artwork cache survive the rename.
@@ -66,16 +67,25 @@ AmpApp* AmpApp::Instance()
 AmpApp::AmpApp()
     : BApplication(kSignature)
 {
-    BPath settingsBase;
-    find_directory(B_USER_SETTINGS_DIRECTORY, &settingsBase, true);
-    MigrateRenamedDirectory(settingsBase, "TasAmp", "Amp");
+    BPath settingsBase, cacheBase;
+    // AMP_DATA_DIR keeps settings, library and artwork in a folder of its own: a build under
+    // test can run next to the installed Amp without touching the library in use
+    const char* dataDir = getenv("AMP_DATA_DIR");
+    if (dataDir && *dataDir) {
+        settingsBase.SetTo(dataDir, "settings");
+        cacheBase.SetTo(dataDir, "cache");
+        create_directory(settingsBase.Path(), 0755);
+        create_directory(cacheBase.Path(), 0755);
+    } else {
+        find_directory(B_USER_SETTINGS_DIRECTORY, &settingsBase, true);
+        find_directory(B_USER_CACHE_DIRECTORY, &cacheBase, true);
+        MigrateRenamedDirectory(settingsBase, "TasAmp", "Amp");
+        MigrateRenamedDirectory(cacheBase, "TasAmp", "Amp");
+    }
     BPath path(settingsBase);
     path.Append("Amp");
     create_directory(path.Path(), 0755);
     fSettingsDir = path.Path();
-    BPath cacheBase;
-    find_directory(B_USER_CACHE_DIRECTORY, &cacheBase, true);
-    MigrateRenamedDirectory(cacheBase, "TasAmp", "Amp");
     BPath cache(cacheBase);
     cache.Append("Amp");
     create_directory(cache.Path(), 0755);
@@ -99,6 +109,10 @@ AmpApp::AmpApp()
     std::string error;
     if (!fLibrary->Open(error))
         fprintf(stderr, "Amp: cannot open library: %s\n", error.c_str());
+    // Music Assistant is off: whatever an earlier version left behind goes before it is shown
+    fMAEnabled = data.maEnabled && !data.maHost.empty();
+    if (!fMAEnabled && fLibrary->HasMusicAssistantData())
+        fLibrary->ClearMusicAssistantData();
     fImages.reset(new ImageCache(fCacheDir, *fSettings));
     fImages->Open();
     fMA.reset(new MusicAssistant());
@@ -189,7 +203,10 @@ void AmpApp::MessageReceived(BMessage* message)
             StartScan();
             break;
         case kMsgMAResync:
-            ConnectMusicAssistant(true);
+            if (fMAEnabled)
+                ConnectMusicAssistant(true);
+            else
+                fScanner->onProgress("Music Assistant is switched off in Settings", true);
             break;
         case kMsgTrackFinished: {
             int32 generation = 0;
@@ -258,8 +275,21 @@ void AmpApp::ApplySettingsChanged()
         BMessenger(fWindow).SendMessage(kMsgLibraryChanged);
 }
 
+bool AmpApp::WhileMAEnabled(const std::function<void()>& change)
+{
+    std::lock_guard<std::mutex> lock(fMAMutex);
+    if (!fMAEnabled)
+        return false;
+    change();
+    return true;
+}
+
 void AmpApp::ConnectMusicAssistant(bool resync)
 {
+    {
+        std::lock_guard<std::mutex> lock(fMAMutex);
+        fMAEnabled = true;
+    }
     if (fMASyncRunning)
         return;
     fMASyncRunning = true;
@@ -282,18 +312,33 @@ void AmpApp::MAConnectWorker(bool resync)
         fMASyncRunning = false;
         return;
     }
+    if (fMA->Token() != fSettings->Get().maToken)
+        fSettings->Modify([this](SettingsData& d) { d.maToken = fMA->Token(); });
     SettingsData data = fSettings->Get();
-    if (data.maToken != fMA->Token()) {
-        data.maToken = fMA->Token();
-        fSettings->Update(data);
+    bool enabled = WhileMAEnabled([&] {
+        fPlayer->EnableMusicAssistant(fMA->Host(), fMA->Port(), fMA->Token(), data.maPlayerId, data.maPlayerName);
+        fMAConnected = true;
+    });
+    if (!enabled) {
+        // switched off while the login was under way
+        fMASyncRunning = false;
+        return;
     }
-    fPlayer->EnableMusicAssistant(fMA->Host(), fMA->Port(), fMA->Token(), data.maPlayerId, data.maPlayerName);
-    fMAConnected = true;
     if (resync) {
         MASyncResult result;
-        bool ok = fMA->FetchLibrary(result, [&](const std::string& text) { status(true, "Music Assistant: " + text); });
+        bool ok = fMA->FetchLibrary(result, [&](const std::string& text) {
+            if (fMAEnabled)
+                status(true, "Music Assistant: " + text);
+        });
+        if (!fMAEnabled) {
+            fMASyncRunning = false;
+            return;
+        }
         if (ok) {
-            fLibrary->ApplyMASync(result);
+            if (!WhileMAEnabled([&] { fLibrary->ApplyMASync(result); })) {
+                fMASyncRunning = false;
+                return;
+            }
             status(true, "Music Assistant library synced: " + std::to_string(result.tracks.size()) + " tracks");
         } else
             status(true, "Music Assistant sync failed: " + result.error);
@@ -307,13 +352,32 @@ void AmpApp::MAConnectWorker(bool resync)
 
 void AmpApp::DisconnectMusicAssistant()
 {
+    std::lock_guard<std::mutex> lock(fMAMutex);
+    fMAEnabled = false;
+    // a streamed song stops while the server can still be told
+    fPlayer->StopMusicAssistantTrack();
     fPlayer->DisableMusicAssistant();
     fMAConnected = false;
+    RemoveMusicAssistantContent();
     BMessage message(kMsgMAStatus);
     message.AddBool("connected", false);
     message.AddString("message", "Music Assistant disabled");
     if (fWindow)
         BMessenger(fWindow).SendMessage(&message);
+}
+
+void AmpApp::RemoveMusicAssistantContent()
+{
+    if (!fLibrary->HasMusicAssistantData())
+        return;
+    fLibrary->ClearMusicAssistantData();
+    fPlayer->DropMissingTracks();
+    {
+        std::lock_guard<std::mutex> lock(fMutex);
+        fPlaylistSyncQueue.clear();
+    }
+    if (fWindow)
+        BMessenger(fWindow).SendMessage(kMsgMACleared);
 }
 
 void AmpApp::SyncPlaylistToMA(int64_t playlistId)
@@ -370,19 +434,30 @@ bool AmpApp::LoadMAPlaylist(int64_t playlistId)
         std::vector<Track> tracks;
         std::string error;
         if (fMA->EnsureAuthenticated(error) && fMA->FetchLibraryPlaylistTracks(itemId, tracks, error)) {
-            std::vector<int64_t> ids = fLibrary->UpsertTracks(tracks, false);
-            bool changed;
-            {
-                Library::Locker locker(*fLibrary);
-                const Playlist* playlist = fLibrary->PlaylistById(playlistId);
-                changed = !playlist || playlist->trackIds != ids;
-            }
-            if (changed) {
-                fLibrary->SetPlaylistTracks(playlistId, ids);
-                fLibrary->RebuildIndex();
-            }
-            status("Playlist \"" + name + "\": " + std::to_string(ids.size()) + " tracks");
-        } else
+            size_t count = 0;
+            bool stored = WhileMAEnabled([&] {
+                {
+                    // switched off and on again in the meantime: the playlist is another one now
+                    Library::Locker locker(*fLibrary);
+                    if (fLibrary->PlaylistById(playlistId) == nullptr)
+                        return;
+                }
+                std::vector<int64_t> ids = fLibrary->UpsertTracks(tracks, false);
+                count = ids.size();
+                bool changed;
+                {
+                    Library::Locker locker(*fLibrary);
+                    const Playlist* playlist = fLibrary->PlaylistById(playlistId);
+                    changed = !playlist || playlist->trackIds != ids;
+                }
+                if (changed) {
+                    fLibrary->SetPlaylistTracks(playlistId, ids);
+                    fLibrary->RebuildIndex();
+                }
+            });
+            if (stored)
+                status("Playlist \"" + name + "\": " + std::to_string(count) + " tracks");
+        } else if (fMAEnabled)
             status("Cannot load playlist \"" + name + "\": " + error);
         {
             std::lock_guard<std::mutex> lock(fMutex);
@@ -412,7 +487,7 @@ void AmpApp::PlaylistSyncWorker(int64_t playlistId)
     {
         Library::Locker locker(*fLibrary);
         const Playlist* playlist = fLibrary->PlaylistById(playlistId);
-        if (!playlist || !playlist->syncToMA)
+        if (!playlist || !playlist->syncToMA || !fMAEnabled)
             return;
         name = playlist->name;
         maItemId = playlist->maItemId;
@@ -436,7 +511,8 @@ void AmpApp::PlaylistSyncWorker(int64_t playlistId)
             return;
         }
         maItemId = created.maItemId;
-        fLibrary->LinkPlaylistToMA(playlistId, created.maItemId, created.maUri, true);
+        if (!WhileMAEnabled([&] { fLibrary->LinkPlaylistToMA(playlistId, created.maItemId, created.maUri, true); }))
+            return;
     }
     // Replace the server-side content: remove everything, then add in order.
     std::vector<Track> current;

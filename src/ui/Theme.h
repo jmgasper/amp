@@ -68,12 +68,19 @@ void FillRoundGradient(BView* view, BRect rect, float radius, rgb_color top, rgb
 void DrawMABadge(BView* view, BPoint leftTop, float height = 11.0f);
 void DrawArtPlaceholder(BView* view, BRect rect);
 void DrawNoteIcon(BView* view, BRect rect, rgb_color color);
-// A MiniDisc cartridge centred in `rect`: body with its cut corner and the metal shutter.
-// `detailed` adds shading and the label lines, for sizes above ~32 pixels.
+// A MiniDisc cartridge centred in `rect`. `detailed` is the colour picture for sizes above
+// ~32 pixels; without it the one-colour glyph is drawn in `body`. Both come from the artwork
+// in the resources; without them the cartridge is drawn from shapes, with `shutter` for the
+// metal.
 void DrawMiniDisc(BView* view, BRect rect, rgb_color body, rgb_color shutter, bool detailed = false);
 // A small progress pie (iTunes' sync indicator): a ring filled clockwise from the top.
 void DrawProgressPie(BView* view, BRect rect, float fraction, rgb_color color);
 void DrawBitmapFitted(BView* view, const BBitmap* bitmap, BRect rect);
+// Where DrawBitmapFitted puts the picture: `rect` itself without a bitmap.
+BRect FittedRect(const BBitmap* bitmap, BRect rect);
+// The shadow a sheet lying on `rect` throws: soft over `blur` pixels, falling `drop` pixels
+// below the sheet, `strength` (0-255) at its darkest. Drawn before the sheet itself.
+void DrawSoftShadow(BView* view, BRect rect, float blur = 8.0f, float drop = 3.0f, uint8 strength = 135);
 BString TruncateToWidth(const BView* view, const char* text, float width);
 void DrawTruncated(BView* view, const char* text, BRect rect, alignment align = B_ALIGN_LEFT, float inset = 4.0f);
 rgb_color Blend(rgb_color a, rgb_color b, float amount);

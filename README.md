@@ -9,9 +9,13 @@ server sends audio straight to the Haiku machine.
 
 - Local library scanned from configurable folders; tags read with TagLib, durations from the
   Media Kit when tags carry none, embedded and folder artwork picked up during the scan.
+  Folders are listed and files are read by up to eight workers at once, each file in a few
+  large reads, so a library of tens of thousands of songs on a network share is there in
+  minutes.
 - Music Assistant: username/password login, library sync (artists, albums, tracks,
   playlists), playback through the Sendspin player protocol, playlists mirrored back to the
-  server. Streamed items carry a small **MA** badge everywhere.
+  server. Streamed items carry a small **MA** badge everywhere. Switching Music Assistant
+  off in the settings removes its songs, albums, artists and playlists from the library.
 - Browse by song list, album-grouped list with artwork, album grid, artists, and playlists;
   instant search across title, artist and album. Playlists offer the same three views
   (list, album list, cover grid) and remember their own choice. The column header lives in
@@ -48,8 +52,11 @@ make package        # artifacts/amp-<version>-x86_64.hpkg
 
 The development VM workflow (sync sources, build, screenshots) is described in
 `docs/VM.md`; the code layout in `docs/ARCHITECTURE.md`; MiniDisc writing, its tools and
-tests in `docs/MINIDISC.md`. `make check` runs the core unit tests and `make mdtool` builds a
-command-line NetMD tool. `tools/ws.sh` and `tools/ws-build.sh` do for the owner's
+tests in `docs/MINIDISC.md`. `make check` runs the core unit tests, `make mdtool` builds a
+command-line NetMD tool and `make scantool` one that times the library scanner on real
+folders (`build-haiku/scantool [-j workers] folder...`, with a scratch library). `make icon`
+rebuilds the application icon and the pictures in `resources/images` from the artwork in
+`resources/branding/source` (Python 3 with Pillow). `tools/ws.sh` and `tools/ws-build.sh` do for the owner's
 workstation (a bare-metal Haiku machine with the test recorder) what `tools/haiku.sh` and
 `tools/sync-build.sh` do for the VM.
 

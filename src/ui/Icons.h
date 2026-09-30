@@ -32,6 +32,12 @@ enum Icon {
     kLock,
 };
 
+// Pictures shipped in the application's resources.
+enum Picture {
+    kMiniDiscPicture,   // the MiniDisc cartridge in colour
+    kMiniDiscGlyph,     // the cartridge as a one-colour mark
+};
+
 // Makes the Font Awesome font available (copying it into the user font
 // directory on first run) and loads it. Returns whether glyphs can be drawn.
 bool Init();
@@ -43,6 +49,11 @@ void Draw(BView* view, Icon icon, BRect rect, float size, rgb_color color);
 
 // Draws the glyph centred inside `rect` (inset by `margin`), sized to fill it.
 void DrawFitted(BView* view, Icon icon, BRect rect, rgb_color color, float margin = 0.0f);
+
+// Draws the picture as large as fits `rect`, centred. False when the resources lack it.
+bool DrawPicture(BView* view, Picture picture, BRect rect);
+// The same in one colour: the picture lends its shape, `color` fills it.
+bool DrawGlyph(BView* view, Picture picture, BRect rect, rgb_color color);
 
 } // namespace icons
 } // namespace amp

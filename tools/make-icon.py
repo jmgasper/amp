@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Build Amp's application icon: a small amplifier with a Tasmanian-devil-black cabinet,
-a warm speaker cone and a bright musical note, drawn to read from 16 px up to 128 px.
+"""Build Amp's application icon: a green glass button with a white pair of beamed notes in a
+brushed metal ring. Haiku application icons are vector drawings (HVIF), so the artwork in
+resources/branding/source/amp-icon.png is redrawn here: the ring, the button and its gloss
+from circles and gradients measured on the picture, the notes traced from it.
 
     python3 tools/make-icon.py resources/branding/amp-icon.hvif [preview.png]
 """
+import math
 import os
 import sys
 
@@ -11,107 +14,186 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hvif  # noqa: E402
 
 C = hvif.hex_color
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ARTWORK = os.path.join(ROOT, 'resources', 'branding', 'source', 'amp-icon.png')
+
+# The ring of the artwork is centred on (624, 625) and 492 pixels in radius; on the 64 x 64
+# canvas it gets a radius of 30, which leaves room for the shadow below it.
+CENTER = (624.0, 625.0)
+SCALE = 30.0 / 492.0
+ORIGIN = (32.0, 30.5)
+
+
+def canvas(x, y):
+    return ((x - CENTER[0]) * SCALE + ORIGIN[0], (y - CENTER[1]) * SCALE + ORIGIN[1])
 
 
 def curve(point, pin, pout):
     return (point, pin, pout)
 
 
-def circle(cx, cy, r):
-    k = 0.5523 * r
+def circle(cx, cy, r, ry=None):
+    ry = r if ry is None else ry
+    k, ky = 0.5523 * r, 0.5523 * ry
     return {'closed': True, 'points': [
-        curve((cx + r, cy), (cx + r, cy - k), (cx + r, cy + k)),
-        curve((cx, cy + r), (cx + k, cy + r), (cx - k, cy + r)),
-        curve((cx - r, cy), (cx - r, cy + k), (cx - r, cy - k)),
-        curve((cx, cy - r), (cx - k, cy - r), (cx + k, cy - r)),
+        curve((cx + r, cy), (cx + r, cy - ky), (cx + r, cy + ky)),
+        curve((cx, cy + ry), (cx + k, cy + ry), (cx - k, cy + ry)),
+        curve((cx - r, cy), (cx - r, cy + ky), (cx - r, cy - ky)),
+        curve((cx, cy - ry), (cx - k, cy - ry), (cx + k, cy - ry)),
     ]}
 
 
-def rounded_rect(l, t, r, b, rad):
-    k = 0.5523 * rad
-    return {'closed': True, 'points': [
-        curve((l + rad, t), (l + rad - k, t), (l + rad + k, t)),
-        (r - rad, t),
-        curve((r, t + rad), (r, t + rad - k), (r, t + rad + k)),
-        (r, b - rad),
-        curve((r - rad, b), (r - rad + k, b), (r - rad - k, b)),
-        (l + rad, b),
-        curve((l, b - rad), (l, b - rad + k), (l, b - rad - k)),
-        (l, t + rad),
-    ]}
+def artwork_circle(x, y, r):
+    cx, cy = canvas(x, y)
+    return circle(cx, cy, r * SCALE)
+
+
+# ------------------------------------------------------------------ tracing
+
+def trace_notes():
+    """The outline of the notes as canvas points, read from the artwork."""
+    from PIL import Image, ImageChops, ImageDraw
+    image = Image.open(ARTWORK).convert('RGB')
+    width, height = image.size
+    # the notes are the only white inside the button; their lower halves are shaded, but
+    # still far from the green around them, which has next to no blue
+    red, green, blue = image.split()
+    white = ImageChops.darker(red.point(lambda v: 255 if v >= 150 else 0), blue.point(lambda v: 255 if v >= 150 else 0))
+    seed = (494, 789)  # inside the left note head
+    if white.getpixel(seed) != 255:
+        raise SystemExit('the artwork changed: no note at %r' % (seed,))
+    ImageDraw.floodfill(white, seed, 128)
+    inside = white.point(lambda v: 1 if v == 128 else 0)
+    pixels = inside.load()
+
+    def filled(x, y):
+        return 0 <= x < width and 0 <= y < height and pixels[x, y] == 1
+
+    left, top, right, bottom = inside.point(lambda v: 255 if v else 0).getbbox()
+    start = next((x, top) for x in range(left, right) if filled(x, top))
+    # walk the cracks between pixels with the shape on the right-hand side
+    heading = {(1, 0): ((0, 0), (0, -1)), (0, 1): ((-1, 0), (0, 0)), (-1, 0): ((-1, -1), (-1, 0)), (0, -1): ((0, -1), (-1, -1))}
+    left_of = {(1, 0): (0, -1), (0, -1): (-1, 0), (-1, 0): (0, 1), (0, 1): (1, 0)}
+    right_of = {v: k for k, v in left_of.items()}
+    at, direction = start, (1, 0)
+    outline = []
+    while True:
+        outline.append(at)
+        at = (at[0] + direction[0], at[1] + direction[1])
+        (rx, ry), (lx, ly) = heading[direction]
+        ahead_right = filled(at[0] + rx, at[1] + ry)
+        ahead_left = filled(at[0] + lx, at[1] + ly)
+        if ahead_left:
+            direction = left_of[direction]
+        elif not ahead_right:
+            direction = right_of[direction]
+        if at == start and direction == (1, 0):
+            break
+        if len(outline) > 4 * (width + height) * 4:
+            raise SystemExit('the outline of the notes does not close')
+    points = simplify_closed(outline, 0.9)
+    if len(points) > 250:
+        points = simplify_closed(outline, 1.6)
+    return [canvas(x, y) for x, y in points]
+
+
+def simplify(points, tolerance):
+    """Ramer-Douglas-Peucker without recursion."""
+    keep = [False] * len(points)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(points) - 1)]
+    while stack:
+        first, last = stack.pop()
+        (ax, ay), (bx, by) = points[first], points[last]
+        length = math.hypot(bx - ax, by - ay)
+        worst, index = 0.0, -1
+        for i in range(first + 1, last):
+            px, py = points[i]
+            if length == 0:
+                distance = math.hypot(px - ax, py - ay)
+            else:
+                distance = abs((bx - ax) * (ay - py) - (ax - px) * (by - ay)) / length
+            if distance > worst:
+                worst, index = distance, i
+        if worst > tolerance:
+            keep[index] = True
+            stack.append((first, index))
+            stack.append((index, last))
+    return [p for p, k in zip(points, keep) if k]
+
+
+def simplify_closed(points, tolerance):
+    far = max(range(len(points)), key=lambda i: math.hypot(points[i][0] - points[0][0], points[i][1] - points[0][1]))
+    first = simplify(points[:far + 1], tolerance)
+    second = simplify(points[far:] + [points[0]], tolerance)
+    return first[:-1] + second[:-1]
+
+
+def gloss_outline():
+    """The highlight on the glass: the part of the button inside a circle laid over its upper left."""
+    bx, by = canvas(624, 609)
+    br = 338 * SCALE
+    gx, gy = canvas(554, 249)
+    gr = 372 * SCALE
+    points = []
+    steps = 96
+    for i in range(steps):
+        angle = 2 * math.pi * i / steps
+        x, y = bx + br * math.cos(angle), by + br * math.sin(angle)
+        if math.hypot(x - gx, y - gy) <= gr:
+            points.append((angle, x, y, 0))
+    arc = []
+    for i in range(steps):
+        angle = 2 * math.pi * i / steps
+        x, y = gx + gr * math.cos(angle), gy + gr * math.sin(angle)
+        if math.hypot(x - bx, y - by) <= br:
+            arc.append((angle, x, y))
+    # the rim of the button runs clockwise from the left to the upper right; the edge of the
+    # gloss closes the shape from there back to the left
+    rim = sorted(points, key=lambda p: (p[0] - math.pi / 2) % (2 * math.pi))
+    arc = sorted(arc, key=lambda p: p[0])
+    return [(x, y) for _, x, y, _ in rim] + [(x, y) for _, x, y in arc]
 
 
 # ------------------------------------------------------------------ styles
-OUTLINE = {'color': C('1c1a1a')}
-CABINET = hvif.linear_gradient((10, 8), (54, 58), [
-    (0.0, C('4a4a4e')), (0.5, C('2b2b2f')), (1.0, C('141416'))])
-CABINET_TOP = hvif.linear_gradient((10, 8), (54, 14), [(0.0, C('6c6c72')), (1.0, C('3a3a3f'))])
-GRILLE = hvif.linear_gradient((14, 24), (50, 56), [(0.0, C('c9b48c')), (1.0, C('8d7551'))])
-GRILLE_DARK = {'color': C('6b5738')}
-CONE = hvif.radial_gradient((31, 40), 12, [(0.0, C('3a3a3d')), (0.7, C('222225')), (1.0, C('101012'))])
-CONE_RING = {'color': C('5a5a60')}
-DUST_CAP = hvif.radial_gradient((29, 38), 4, [(0.0, C('8a8a90')), (1.0, C('3c3c40'))])
-KNOB = hvif.linear_gradient((0, 12), (0, 20), [(0.0, C('e8e8ec')), (1.0, C('9a9aa2'))])
-KNOB_DOT = {'color': C('d62c2c')}
-NOTE = hvif.linear_gradient((36, 4), (58, 30), [(0.0, C('ffd94a')), (1.0, C('f29a1a'))])
-NOTE_OUTLINE = {'color': C('7a4a08')}
-SHADOW = hvif.radial_gradient((32, 60), 24, [
-    (0.0, (20, 20, 20, 110)), (0.7, (20, 20, 20, 40)), (1.0, (20, 20, 20, 0))], ratio=0.16)
-HIGHLIGHT = {'color': (255, 255, 255, 60)}
+SHADOW_AT = canvas(624, 1092)
+SHADOW = hvif.radial_gradient(SHADOW_AT, 25.5, [
+    (0.0, (120, 120, 120, 150)), (0.5, (130, 130, 130, 75)), (1.0, (140, 140, 140, 0))], ratio=0.26)
+RIM = hvif.linear_gradient((32, 0.5), (32, 60.5), [(0.0, C('b4b4b4')), (0.5, C('7c7d7f')), (1.0, C('26282a'))])
+# brushed metal: brightest at the upper left, a second, weaker sheen opposite
+METAL = {'gradient': hvif.GRADIENT_CONIC, 'stops': [
+    (0.0, C('ebebea')), (0.25, C('d2d3d4')), (0.5, C('a3a6aa')), (0.78, C('a0a3a8')), (1.0, C('c2c3c5'))]}
+ANGLE = math.radians(-135)  # gradient x axis towards the upper left
+METAL['matrix'] = [math.cos(ANGLE), math.sin(ANGLE), -math.sin(ANGLE), math.cos(ANGLE), ORIGIN[0], ORIGIN[1]]
+METAL_EDGE = hvif.linear_gradient((32, 1.5), (32, 59.5), [(0.0, (255, 255, 255, 150)), (0.4, (255, 255, 255, 0)), (1.0, (255, 255, 255, 0))])
+WALL = hvif.linear_gradient((32, 6.5), (32, 53), [(0.0, C('3c3c3e')), (0.45, C('6e6f71')), (0.8, C('d8d9da')), (1.0, C('f4f4f4'))])
+GAP = {'color': C('03190a')}
+GREEN = hvif.linear_gradient(canvas(470, 260), canvas(780, 960), [
+    (0.0, C('7fcd3c')), (0.3, C('4aa526')), (0.65, C('247d1d')), (1.0, C('17651a'))])
+GLOW = hvif.radial_gradient(canvas(624, 1040), 420 * SCALE, [
+    (0.0, (120, 210, 130, 170)), (0.45, (90, 180, 105, 80)), (1.0, (70, 160, 90, 0))], ratio=0.55)
+GLOSS = hvif.linear_gradient(canvas(480, 250), canvas(560, 620), [
+    (0.0, (255, 255, 255, 105)), (0.6, (255, 255, 255, 40)), (1.0, (255, 255, 255, 12))])
+NOTE_SHADOW = {'color': (4, 50, 12, 55)}
+NOTE = hvif.linear_gradient(canvas(624, 440), canvas(624, 850), [(0.0, C('fbfdf8')), (1.0, C('dcebd6'))])
 
-style_names = ['outline', 'cabinet', 'cabinetTop', 'grille', 'grilleDark', 'cone', 'coneRing', 'dustCap', 'knob',
-               'knobDot', 'note', 'noteOutline', 'shadow', 'highlight']
-styles = [OUTLINE, CABINET, CABINET_TOP, GRILLE, GRILLE_DARK, CONE, CONE_RING, DUST_CAP, KNOB, KNOB_DOT, NOTE,
-          NOTE_OUTLINE, SHADOW, HIGHLIGHT]
+style_names = ['shadow', 'rim', 'metal', 'metalEdge', 'wall', 'gap', 'green', 'glow', 'gloss', 'noteShadow', 'note']
+styles = [SHADOW, RIM, METAL, METAL_EDGE, WALL, GAP, GREEN, GLOW, GLOSS, NOTE_SHADOW, NOTE]
 S = {name: index for index, name in enumerate(style_names)}
 
 # ------------------------------------------------------------------ paths
-cabinet = rounded_rect(8, 10, 56, 58, 5)
-cabinet_top = rounded_rect(8, 10, 56, 21, 5)
-top_line = {'closed': False, 'points': [(9, 21), (55, 21)]}
-grille = rounded_rect(12, 24, 52, 55, 3)
-grille_lines = {'closed': False, 'points': [(12, 31), (52, 31), (52, 33), (12, 33), (12, 40), (52, 40), (52, 42), (12, 42),
-                                            (12, 49), (52, 49)]}
-cone_outer = circle(31, 40, 12)
-cone_ring = circle(31, 40, 9.5)
-cone_inner = circle(31, 40, 7.5)
-dust_cap = circle(30, 39, 3.2)
-knob1 = circle(16, 15.5, 3.2)
-knob2 = circle(25, 15.5, 3.2)
-knob1_dot = circle(16, 13.3, 0.8)
-knob2_dot = circle(25, 13.3, 0.8)
-led = circle(48, 15.5, 1.6)
-# eighth note over the top-right corner
-note = {'closed': True, 'points': [
-    curve((44, 27), (40, 27), (48, 27)),
-    curve((49, 22), (49, 24.5), (49, 20)),
-    (49, 8),
-    curve((60, 12), (54, 7), (60, 9)),
-    curve((57, 18), (60, 15), (56, 19)),
-    (55, 12),
-    (52, 11),
-    (52, 22),
-    curve((44, 31), (52, 27), (46.5, 31)),
-    curve((39, 27), (40, 31), (39, 28)),
-]}
-note_small = {'closed': True, 'points': [
-    curve((44, 27), (39, 27), (49, 27)),
-    (50, 22),
-    (50, 6),
-    (61, 11),
-    (61, 16),
-    (54, 12),
-    (54, 22),
-    curve((44, 32), (54, 29), (46, 32)),
-    curve((38, 27), (39, 32), (38, 28)),
-]}
-shadow = circle(32, 60, 1)
-highlight = {'closed': False, 'points': [(11, 12), (13, 11), (52, 11)]}
+# gradients follow the matrix of a shape, so the ellipse is drawn as one
+shadow = circle(SHADOW_AT[0], SHADOW_AT[1], 25.5, 25.5 * 0.26)
+rim = artwork_circle(624, 625, 492)
+metal = artwork_circle(624, 625, 477)
+wall = artwork_circle(624, 613, 381)
+gap = artwork_circle(624, 609, 367)
+button = artwork_circle(624, 609, 356)
+notes = {'closed': True, 'points': trace_notes()}
+gloss = {'closed': True, 'points': gloss_outline()}
 
-path_names = ['cabinet', 'cabinetTop', 'topLine', 'grille', 'grilleLines', 'coneOuter', 'coneRing', 'coneInner',
-              'dustCap', 'knob1', 'knob2', 'knob1Dot', 'knob2Dot', 'led', 'note', 'noteSmall', 'shadow', 'highlight']
-paths = [cabinet, cabinet_top, top_line, grille, grille_lines, cone_outer, cone_ring, cone_inner, dust_cap, knob1, knob2,
-         knob1_dot, knob2_dot, led, note, note_small, shadow, highlight]
+path_names = ['shadow', 'rim', 'metal', 'wall', 'gap', 'button', 'notes', 'gloss']
+paths = [shadow, rim, metal, wall, gap, button, notes, gloss]
 P = {name: index for index, name in enumerate(path_names)}
 
 
@@ -121,38 +203,21 @@ def shape(style, *names, **extra):
     return result
 
 
-thin = {'type': 'stroke', 'width': 1, 'join': 2, 'cap': 2, 'miter': 4}
-contour_large = {'type': 'contour', 'width': 3, 'join': 2, 'miter': 4}
-contour_small = {'type': 'contour', 'width': 2, 'join': 2, 'miter': 4}
-note_contour = {'type': 'contour', 'width': 2.5, 'join': 2, 'miter': 4}
-
-SMALL = {'lod': (0.0, 0.5)}
-LARGE = {'lod': (0.5, 4.0)}
-DETAIL = {'lod': (0.95, 4.0)}
+LARGE = {'lod': (0.4, 4.0)}
 
 shapes = [
-    shape('shadow', 'shadow', matrix=[24.0, 0.0, 0.0, 4.0, 32.0 - 32.0 * 24.0, 60.0 - 60.0 * 4.0]),
-    shape('outline', 'cabinet', transformers=[contour_large], **LARGE),
-    shape('outline', 'cabinet', transformers=[contour_small], **SMALL),
-    shape('cabinet', 'cabinet'),
-    shape('cabinetTop', 'cabinetTop'),
-    shape('highlight', 'highlight', transformers=[thin], **DETAIL),
-    shape('outline', 'topLine', transformers=[thin], **LARGE),
-    shape('grille', 'grille'),
-    shape('grilleDark', 'grilleLines', transformers=[thin], **DETAIL),
-    shape('outline', 'coneOuter', **LARGE),
-    shape('coneRing', 'coneRing', **LARGE),
-    shape('cone', 'coneInner'),
-    shape('cone', 'coneOuter', **SMALL),
-    shape('dustCap', 'dustCap', **LARGE),
-    shape('outline', 'knob1', 'knob2', transformers=[contour_small], **LARGE),
-    shape('knob', 'knob1', 'knob2', **LARGE),
-    shape('knobDot', 'knob1Dot', 'knob2Dot', **DETAIL),
-    shape('knobDot', 'led', **LARGE),
-    shape('noteOutline', 'note', transformers=[note_contour], **LARGE),
-    shape('note', 'note', **LARGE),
-    shape('noteOutline', 'noteSmall', transformers=[contour_small], **SMALL),
-    shape('note', 'noteSmall', **SMALL),
+    shape('shadow', 'shadow'),
+    shape('rim', 'rim'),
+    shape('metal', 'metal'),
+    shape('metalEdge', 'metal', **LARGE),
+    shape('wall', 'wall'),
+    shape('gap', 'gap'),
+    shape('green', 'button'),
+    shape('glow', 'button'),
+    shape('gloss', 'gloss', **LARGE),
+    shape('noteShadow', 'notes', matrix=[1.0, 0.0, 0.0, 1.0, 0.6, 1.0], **LARGE),
+    shape('noteShadow', 'notes', matrix=[1.0, 0.0, 0.0, 1.0, 0.3, 0.5]),
+    shape('note', 'notes'),
 ]
 
 icon = {'styles': styles, 'paths': paths, 'shapes': shapes}
@@ -163,7 +228,7 @@ if __name__ == '__main__':
     hvif.decode(data)
     with open(out, 'wb') as f:
         f.write(data)
-    print('%s: %d bytes' % (out, len(data)))
+    print('%s: %d bytes, the notes have %d points' % (out, len(data), len(notes['points'])))
     svg = out.rsplit('.', 1)[0] + '.svg'
     with open(svg, 'w') as f:
         f.write(hvif.to_svg(icon))

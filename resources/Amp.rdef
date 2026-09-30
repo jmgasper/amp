@@ -3,13 +3,16 @@ resource app_flags B_SINGLE_LAUNCH;
 resource vector_icon {
     import "branding/amp-icon.hvif"
 };
+// pictures the views draw (tools/make-images.py makes them from the artwork)
+resource(201, "minidisc") #'PNG ' import "images/minidisc.png";
+resource(202, "minidisc-glyph") #'PNG ' import "images/minidisc-glyph.png";
 resource app_version {
     major = 0,
     middle = 3,
-    minor = 0,
+    minor = 1,
     variety = B_APPV_ALPHA,
     internal = 0,
-    short_info = "Amp 0.3.0 alpha — music player",
+    short_info = "Amp 0.3.1 alpha — music player",
     long_info = "A native Haiku music player for local libraries and Music Assistant, styled after iTunes 8."
 };
 resource file_types message {

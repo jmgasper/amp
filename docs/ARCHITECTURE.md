@@ -6,6 +6,8 @@ src/core     portable C++17 (no Haiku headers except in Scanner's TagLib use)
   Settings           JSON settings file (library folders, MA account, art sources, UI state)
   Library            SQLite store + in-memory index (albums/artists derived from tracks)
   Scanner            folder walk, TagLib tags, embedded/folder art, optional duration probe
+  TagStream          the file access TagLib reads through: few large reads; MP4 box reader
+  Workers            a handful of threads for one job (Kernel Kit threads on Haiku)
   ImageCache         on-disk artwork cache + fetch worker (MA proxy, online providers)
   ArtProviders       MusicBrainz/CAA, TheAudioDB, Discogs lookups
   Http               libcurl wrapper
@@ -36,7 +38,8 @@ src/ui       Haiku Interface Kit
   AlbumGridView      album cover grid
   ArtistsView        artist list + header + grouped track list
   StatusBarView      +/shuffle/repeat, summary, MA indicator, Settings button
-  Icons              Font Awesome glyphs: registers the bundled font, draws it centred
+  Icons              Font Awesome glyphs: registers the bundled font, draws it centred;
+                     the MiniDisc pictures from the resources, scaled and tinted
   SettingsWindow     Library / Music Assistant / Artwork tabs
   ArtStore           scaled BBitmap cache fed by ImageCache
   MiniDiscView       the DEVICES source: disc summary, capacity bar, tracks and pending songs
@@ -55,10 +58,44 @@ package into the user font directory and calls `update_font_families()`, so the 
 available on any Haiku install; `icons::Draw()` centres a glyph on its ink box, since the icons
 sit on the baseline with different amounts of space around them.
 
+The MiniDisc cartridge is artwork, not a glyph: `resources/images/minidisc.png` (colour, for
+the MiniDisc view and the display) and `minidisc-glyph.png` (one colour, tinted like a glyph
+for the sidebar and the status bar) are PNG resources of the application. `icons::DrawPicture`
+and `icons::DrawGlyph` scale them by averaging, because the pictures are several times larger
+than they are shown. The application icon is a vector drawing: `tools/make-icon.py` builds the
+HVIF from circles and gradients and traces the notes from `resources/branding/source/amp-icon.png`.
+
+Covers in the grid lie on a soft shadow (`DrawSoftShadow`): a black picture whose alpha is
+the blurred outline of the cover, made once per cover size and kept.
+
+## Scanning
+
+`Scanner::Run` works in two steps, each spread over `RunWorkers` threads (as many as there are
+processors, two at least, eight at most; low priority, so playback and the windows stay ahead):
+
+1. The walk. Workers take folders from a shared queue and add the subfolders they find.
+   Every entry is looked at once: audio files are noted with size and modification time, a
+   cover picture (`cover.jpg`, `folder.png`, …) with its folder.
+2. The reading. Files whose size and time match the library are skipped; the others are read
+   through `TagStream`, which serves TagLib from a few pieces it fetches itself: the first
+   64 KiB, the last 4 KiB, whatever a caller asks for in one read, and growing read-ahead for
+   what is read in sequence. TagLib's own stream reads a kilobyte at a time; on a network
+   share each of those is a round trip. For MP4 files `ReadMp4Info` reads the length and the
+   codec from the `moov` box first. Downloads from streaming services are fragmented: the
+   length is in `mehd`, where TagLib does not look, and the sound follows in hundreds of
+   `moof` boxes TagLib would visit one by one. For those the stream ends after `moov`.
+
+Tracks go to the library 200 at a time; the index is rebuilt (and the views reload) every
+three seconds at most. The artwork of an album is stored by the first worker that reads one
+of its songs. Songs are only removed for folders that could be listed: a library folder that
+cannot be opened or is empty (a share that is not mounted) keeps what the library knows.
+On the owner's workstation a library of 21758 songs on an SMB share is read in under three
+minutes; before, the same scan ran at about two songs a second.
+
 ## Threads and messaging
 
-- The scanner, image cache, art store, Sendspin client, Sendspin feeder, local decoder and
-  a progress ticker run on their own threads. They never touch views; they post BMessages
+- The scanner and its workers, image cache, art store, Sendspin client, Sendspin feeder,
+  local decoder and a progress ticker run on their own threads. They never touch views; they post BMessages
   (`player/Messages.h`) to the main window or the application.
 - `Library` is guarded by a recursive mutex; views take a `Library::Locker` while they hold
   pointers into it. Node-based containers keep those pointers stable.
@@ -101,6 +138,20 @@ cannot deliver a picture (HTTP 404, typically because the provider that owns the
 offline) the request moves to the online lookup workers, which try the configured sources in
 order and retry multi-artist albums with the first artist alone. Failed Music Assistant keys
 are retried after 15 minutes, other misses after a week.
+
+## Switching Music Assistant off
+
+`AmpApp::DisconnectMusicAssistant` stops a streamed song, closes the Sendspin client and calls
+`Library::ClearMusicAssistantData`: streamed tracks, server playlists and the album and
+artist records go, in whole-table statements. Local playlists keep their local songs; one
+that was mirrored to the server is unlinked, since a mirror would replace the server's copy
+with what is left of it. The play queue drops the songs that are gone (`DropMissingTracks`)
+and the window leaves the Music Assistant source (`kMsgMACleared`). The sidebar entry, the
+status bar indicator and the "Sync to Music Assistant" menu item are shown only while
+Music Assistant is switched on. Workers that were fetching from the server when the switch
+was turned apply their results through `WhileMAEnabled`, which refuses them. A library that
+still holds streamed content at start-up while Music Assistant is off is cleared before the
+window opens.
 
 ## Music Assistant playback
 

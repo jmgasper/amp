@@ -1,6 +1,7 @@
 // Playback queue: an ordered list of track ids with shuffle and repeat handling.
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace amp {
@@ -28,6 +29,9 @@ public:
     void Append(const std::vector<int64_t>& trackIds);
     void InsertNext(const std::vector<int64_t>& trackIds);
     void RemoveTrack(int64_t trackId);
+    // Removes every track `gone` answers true for, in one pass. When the current track goes,
+    // the one after it becomes current.
+    void RemoveIf(const std::function<bool(int64_t)>& gone);
 
 private:
     void Reshuffle();

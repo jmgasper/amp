@@ -32,6 +32,15 @@ void SidebarView::SetPlaylists(const std::vector<SidebarPlaylist>& playlists)
     Invalidate();
 }
 
+void SidebarView::SetMusicAssistant(bool enabled)
+{
+    if (fMusicAssistant == enabled)
+        return;
+    fMusicAssistant = enabled;
+    Rebuild();
+    Invalidate();
+}
+
 void SidebarView::SetMiniDisc(bool connected, const BString& label, bool busy, float fraction, bool locked)
 {
     fMiniDiscLocked = locked;
@@ -73,7 +82,8 @@ void SidebarView::Rebuild()
     add("music", "Music", false);
     add("artists", "Artists", false);
     add("albums", "Albums", false);
-    add("ma", "Music Assistant", false, 0, true);
+    if (fMusicAssistant)
+        add("ma", "Music Assistant", false, 0, true);
     if (fMiniDiscConnected) {
         y += 8;
         add("", "DEVICES", true);
@@ -332,12 +342,14 @@ void SidebarView::ShowContextMenu(int index, BPoint where)
             BMessage* rename = new BMessage(kMsgRenamePlaylist);
             rename->AddInt64("playlist", item.playlistId);
             menu->AddItem(new BMenuItem("Rename…", rename));
-            BMessage* sync = new BMessage(kMsgSyncPlaylistToMA);
-            sync->AddInt64("playlist", item.playlistId);
-            sync->AddBool("enable", !item.synced);
-            BMenuItem* syncItem = new BMenuItem(item.synced ? "Stop Syncing to Music Assistant" : "Sync to Music Assistant", sync);
-            syncItem->SetMarked(item.synced);
-            menu->AddItem(syncItem);
+            if (fMusicAssistant) {
+                BMessage* sync = new BMessage(kMsgSyncPlaylistToMA);
+                sync->AddInt64("playlist", item.playlistId);
+                sync->AddBool("enable", !item.synced);
+                BMenuItem* syncItem = new BMenuItem(item.synced ? "Stop Syncing to Music Assistant" : "Sync to Music Assistant", sync);
+                syncItem->SetMarked(item.synced);
+                menu->AddItem(syncItem);
+            }
         }
         BMessage* remove = new BMessage(kMsgDeletePlaylist);
         remove->AddInt64("playlist", item.playlistId);

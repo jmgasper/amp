@@ -161,6 +161,7 @@ void MainWindow::ReloadSidebar()
 {
     std::vector<SidebarPlaylist> lists;
     Library& library = App()->GetLibrary();
+    bool playlistGone = fSource == "playlist";
     {
         Library::Locker locker(library);
         for (int64_t id : library.AllPlaylistIds()) {
@@ -168,9 +169,21 @@ void MainWindow::ReloadSidebar()
             if (!p)
                 continue;
             lists.push_back({p->id, p->name.c_str(), p->isMA(), p->syncToMA});
+            if (p->id == fPlaylistId)
+                playlistGone = false;
         }
     }
+    bool musicAssistant = App()->MAEnabled();
+    fSidebar->SetMusicAssistant(musicAssistant);
+    fStatus->SetMAVisible(musicAssistant);
     fSidebar->SetPlaylists(lists);
+    // the source on show went away (Music Assistant switched off, a playlist deleted on the server)
+    if (playlistGone || (fSource == "ma" && !musicAssistant)) {
+        fSource = "music";
+        fPlaylistId = 0;
+        ClearDrillDown();
+        fSidebar->Select("music", 0);
+    }
 }
 
 std::vector<int64_t> MainWindow::FilterTracks(const std::vector<int64_t>& ids) const
@@ -743,8 +756,9 @@ void MainWindow::MessageReceived(BMessage* message)
                         App()->MA().DeletePlaylist(maItemId, error);
                     }).detach();
                 }
+                bool shown = fSource == "playlist" && fPlaylistId == playlistId;
                 ReloadSidebar();
-                if (fSource == "playlist" && fPlaylistId == playlistId)
+                if (shown)
                     SelectSource("music", 0);
             }
             break;
@@ -808,14 +822,14 @@ void MainWindow::MessageReceived(BMessage* message)
                     maUri = p->maUri;
                 }
             }
+            if (enable && !App()->MAEnabled()) {
+                fStatus->SetTransient("Enable Music Assistant in Settings to sync playlists");
+                break;
+            }
             library.LinkPlaylistToMA(playlistId, maItemId, maUri, enable);
             ReloadSidebar();
-            if (enable) {
-                if (!App()->GetSettings().Get().maEnabled)
-                    fStatus->SetTransient("Enable Music Assistant in Settings to sync playlists");
-                else
-                    App()->SyncPlaylistToMA(playlistId);
-            }
+            if (enable)
+                App()->SyncPlaylistToMA(playlistId);
             break;
         }
         case kMsgShowSettings:
@@ -827,7 +841,7 @@ void MainWindow::MessageReceived(BMessage* message)
             break;
         case kMsgAbout: {
             BAlert* alert = new BAlert("About Amp",
-                "Amp 0.3.0\n\nA native music player for Haiku with local libraries, Music Assistant streaming and MiniDisc (NetMD) writing.\n"
+                "Amp 0.3.1\n\nA native music player for Haiku with local libraries, Music Assistant streaming and MiniDisc (NetMD) writing.\n"
                 "Icons from Font Awesome Free 6.7.2. Artwork from embedded tags, folder art, MusicBrainz/Cover Art Archive, TheAudioDB and Discogs.",
                 "OK");
             alert->Go(nullptr);
@@ -874,6 +888,14 @@ void MainWindow::MessageReceived(BMessage* message)
         case kMsgMASyncDone:
             ReloadSidebar();
             ReloadContent();
+            break;
+        case kMsgMACleared:
+            // album ids were dealt anew and the streamed songs are gone: back to the plain source
+            ClearDrillDown();
+            fLoadingPlaylists.clear();
+            ReloadSidebar();
+            ReloadContent();
+            UpdateNowPlaying();
             break;
         case kMsgPlaylistLoading: {
             int64 playlistId = 0;

@@ -10,8 +10,10 @@
 #include "player/Player.h"
 #include <Application.h>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 
 namespace amp {
@@ -47,12 +49,17 @@ public:
     void ApplySettingsChanged();
     std::string SettingsDirectory() const { return fSettingsDir; }
     bool MASyncRunning() const { return fMASyncRunning; }
+    bool MAEnabled() const { return fMAEnabled; }
 
     static AmpApp* Instance();
 
 private:
     void Post(uint32 what, const char* key = nullptr, const char* value = nullptr);
     void MAConnectWorker(bool resync);
+    // Runs `change` unless Music Assistant was switched off in the meantime: what a worker
+    // fetched from the server must not come back into a library that was just cleared.
+    bool WhileMAEnabled(const std::function<void()>& change);
+    void RemoveMusicAssistantContent();
     void PlaylistSyncWorker(int64_t playlistId);
 
     std::string fSettingsDir;
@@ -68,6 +75,8 @@ private:
     MainWindow* fWindow = nullptr;
     std::atomic<bool> fMASyncRunning{false};
     std::atomic<bool> fMAConnected{false};
+    std::atomic<bool> fMAEnabled{false};
+    std::mutex fMAMutex;                       // held while fMAEnabled changes or is acted on
     std::vector<std::string> fScanFolders;
     std::mutex fMutex;
     std::set<int64_t> fPlaylistSyncQueue;

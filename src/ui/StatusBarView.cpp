@@ -67,6 +67,14 @@ void StatusBarView::SetMAStatus(bool connected, const BString& text)
     Invalidate();
 }
 
+void StatusBarView::SetMAVisible(bool visible)
+{
+    if (fMAVisible == visible)
+        return;
+    fMAVisible = visible;
+    Invalidate();
+}
+
 void StatusBarView::SetShuffle(bool shuffle)
 {
     fShuffle = shuffle;
@@ -145,18 +153,20 @@ void StatusBarView::Draw(BRect updateRect)
     // the indicator and the Settings button own the right-hand end: keep the summary clear of them
     BRect settings = SettingsRect();
     float indicatorRight = (fMiniDiscVisible ? MiniDiscRect().left : settings.left) - 12;
-    float indicatorLeft = indicatorRight - kIndicatorWidth;
+    float indicatorLeft = fMAVisible ? indicatorRight - kIndicatorWidth : indicatorRight;
     float centerRight = indicatorLeft - 12;
     if (centerRight < 120)
         centerRight = 120;
     DrawTruncated(this, center.String(), BRect(120, 0, centerRight, bounds.bottom), B_ALIGN_CENTER, 0);
     // Music Assistant indicator left of the Settings button
-    BRect indicator(indicatorLeft, 0, indicatorRight, bounds.bottom);
-    SetHighColor(fMAConnected ? Rgb(60, 170, 80) : Rgb(150, 150, 150));
-    FillEllipse(BRect(indicator.left, 8, indicator.left + 8, 16));
-    SetHighColor(theme::kToolbarText);
-    BString text = fMAText.IsEmpty() ? BString(fMAConnected ? "Music Assistant connected" : "Music Assistant off") : fMAText;
-    DrawTruncated(this, text.String(), BRect(indicator.left + 12, 0, indicator.right, bounds.bottom), B_ALIGN_LEFT, 0);
+    if (fMAVisible) {
+        BRect indicator(indicatorLeft, 0, indicatorRight, bounds.bottom);
+        SetHighColor(fMAConnected ? Rgb(60, 170, 80) : Rgb(150, 150, 150));
+        FillEllipse(BRect(indicator.left, 8, indicator.left + 8, 16));
+        SetHighColor(theme::kToolbarText);
+        BString text = fMAText.IsEmpty() ? BString(fMAConnected ? "Music Assistant connected" : "Music Assistant off") : fMAText;
+        DrawTruncated(this, text.String(), BRect(indicator.left + 12, 0, indicator.right, bounds.bottom), B_ALIGN_LEFT, 0);
+    }
     DrawSettingsButton();
     if (fMiniDiscVisible)
         DrawMiniDiscButton();

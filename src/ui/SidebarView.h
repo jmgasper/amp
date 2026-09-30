@@ -1,4 +1,5 @@
-// Left source list: LIBRARY (Music, Artists, Albums, Music Assistant) and PLAYLISTS.
+// Left source list: LIBRARY (Music, Artists, Albums, Music Assistant while it is switched on)
+// and PLAYLISTS.
 #pragma once
 #include <String.h>
 #include <View.h>
@@ -17,6 +18,7 @@ class SidebarView : public BView {
 public:
     SidebarView();
     void SetPlaylists(const std::vector<SidebarPlaylist>& playlists);
+    void SetMusicAssistant(bool enabled);
     // The DEVICES section: shown while a MiniDisc recorder is connected. A fraction of zero
     // or more draws the progress pie of a running write.
     // `locked`: the disc is write-protected (a lock is drawn).
@@ -51,6 +53,7 @@ private:
     void ShowContextMenu(int index, BPoint where);
 
     std::vector<SidebarPlaylist> fPlaylists;
+    bool fMusicAssistant = false;
     bool fMiniDiscConnected = false;
     bool fMiniDiscBusy = false;
     bool fMiniDiscLocked = false;

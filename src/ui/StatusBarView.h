@@ -16,6 +16,8 @@ public:
     void MessageReceived(BMessage* message) override;
     void DetachedFromWindow() override;
     void SetMAStatus(bool connected, const BString& text);
+    // The indicator is shown while Music Assistant is switched on in the settings.
+    void SetMAVisible(bool visible);
     void SetShuffle(bool shuffle);
     void SetRepeat(int repeat);
     // The "Write to MiniDisc" button (iTunes' "Burn Disc"): shown while a recorder is connected
@@ -37,6 +39,7 @@ private:
 
     BString fSummary, fTransient, fMAText;
     bool fMAConnected = false;
+    bool fMAVisible = true;
     bool fShuffle = false;
     int fRepeat = 0;
     bool fMiniDiscVisible = false;
