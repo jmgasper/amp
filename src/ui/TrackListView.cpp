@@ -512,21 +512,15 @@ void TrackListView::DrawGroup(const Group& group, BRect rect)
     BRect art((kArtColumnWidth - kArtSize) / 2, group.top + 10, (kArtColumnWidth - kArtSize) / 2 + kArtSize - 1, group.top + 10 + kArtSize - 1);
     ArtRequest request = App()->Art().RequestFor(group.artKey, group.artist, group.name, group.localHint, false);
     BBitmap* bitmap = App()->Art().Get(group.artKey, (int)kArtSize, &request);
-    // drop shadow
-    SetDrawingMode(B_OP_ALPHA);
-    SetHighColor(0, 0, 0, 45);
-    FillRect(art.OffsetByCopy(2, 3));
-    SetDrawingMode(B_OP_COPY);
-    DrawBitmapFitted(this, bitmap, art);
-    SetHighColor(150, 150, 150);
-    StrokeRect(art);
+    // the cover lies on the page like in the grid: a soft shadow, not a grey block
+    DrawArtworkOnPage(this, bitmap, art);
     if (group.isMA)
         DrawMABadge(this, BPoint(art.left + 4, art.top + 4), 12);
     BFont bold(be_bold_font);
     bold.SetSize(12);
     SetFont(&bold);
     SetHighColor(theme::kListText);
-    BRect title(cell.left + 6, art.bottom + 6, cell.right - 6, art.bottom + 22);
+    BRect title(cell.left + 6, art.bottom + 9, cell.right - 6, art.bottom + 25); // below the shadow
     DrawTruncated(this, group.name.c_str(), title, B_ALIGN_CENTER, 0);
     BFont plain(be_plain_font);
     plain.SetSize(11);

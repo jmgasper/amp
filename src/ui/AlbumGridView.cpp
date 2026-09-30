@@ -137,14 +137,7 @@ void AlbumGridView::Draw(BRect updateRect)
         ArtRequest request = App()->Art().RequestFor(album.artKey, album.artist, album.name, album.localHint, false);
         BBitmap* bitmap = App()->Art().Get(album.artKey, (int)kArt, &request);
         // the cover lies on the page: a soft shadow below it, a hairline to hold a pale cover
-        BRect shown = FittedRect(bitmap, art);
-        shown = BRect(floorf(shown.left), floorf(shown.top), ceilf(shown.right), ceilf(shown.bottom));
-        DrawSoftShadow(this, shown);
-        DrawBitmapFitted(this, bitmap, art);
-        SetDrawingMode(B_OP_ALPHA);
-        SetHighColor(0, 0, 0, 46);
-        StrokeRect(shown);
-        SetDrawingMode(B_OP_COPY);
+        DrawArtworkOnPage(this, bitmap, art);
         if (album.isMA)
             DrawMABadge(this, BPoint(art.left + 5, art.top + 5), 12);
         SetFont(&bold);

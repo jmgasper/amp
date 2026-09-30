@@ -255,6 +255,29 @@ void DrawSoftShadow(BView* view, BRect rect, float blur, float drop, uint8 stren
     view->PopState();
 }
 
+BRect DrawArtworkOnPage(BView* view, const BBitmap* bitmap, BRect rect, bool artist, float blur, float drop)
+{
+    BRect shown = FittedRect(bitmap, rect);
+    shown = BRect(floorf(shown.left), floorf(shown.top), ceilf(shown.right), ceilf(shown.bottom));
+    DrawSoftShadow(view, shown, blur, drop);
+    view->PushState();
+    if (bitmap)
+        DrawBitmapFitted(view, bitmap, rect);
+    else if (artist) {
+        FillVerticalGradient(view, shown, theme::kArtPlaceholderTop, theme::kArtPlaceholderBottom);
+        icons::DrawFitted(view, icons::kUser, shown.InsetByCopy(shown.Width() * 0.22f, shown.Height() * 0.22f),
+            theme::kArtPlaceholderNote);
+    } else
+        DrawArtPlaceholder(view, shown);
+    // a hairline holds a pale picture together on the white page
+    view->SetDrawingMode(B_OP_ALPHA);
+    view->SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_OVERLAY);
+    view->SetHighColor(0, 0, 0, 46);
+    view->StrokeRect(shown);
+    view->PopState();
+    return shown;
+}
+
 BString TruncateToWidth(const BView* view, const char* text, float width)
 {
     BString result(text);

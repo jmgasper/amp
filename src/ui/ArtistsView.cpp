@@ -14,6 +14,8 @@ namespace amp {
 
 namespace {
 const float kArtistRowHeight = 40.0f;
+const float kHeaderHeight = 100.0f;    // the picture, its shadow and a margin
+const float kPictureSize = 80.0f;
 }
 
 // ---- ArtistListView ---------------------------------------------------------
@@ -192,8 +194,8 @@ ArtistHeaderView::ArtistHeaderView()
     : BView("artistheader", B_WILL_DRAW | B_FULL_UPDATE_ON_RESIZE)
 {
     SetViewColor(B_TRANSPARENT_COLOR);
-    SetExplicitMinSize(BSize(200, 96));
-    SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, 96));
+    SetExplicitMinSize(BSize(200, kHeaderHeight));
+    SetExplicitMaxSize(BSize(B_SIZE_UNLIMITED, kHeaderHeight));
 }
 
 void ArtistHeaderView::SetArtist(int64_t artistId)
@@ -219,21 +221,11 @@ void ArtistHeaderView::Draw(BRect updateRect)
         DrawTruncated(this, "Select an artist", bounds, B_ALIGN_CENTER, 0);
         return;
     }
-    BRect art(12, 8, 91, 87);
+    // the picture lies on the header like the covers on the page: a soft shadow below it
+    BRect art(14, 9, 14 + kPictureSize - 1, 9 + kPictureSize - 1);
     ArtRequest request = App()->Art().RequestFor(artist->art, artist->name, "", "", true);
     BBitmap* bitmap = App()->Art().Get(artist->art, 160, &request);
-    SetDrawingMode(B_OP_ALPHA);
-    SetHighColor(0, 0, 0, 45);
-    FillRect(art.OffsetByCopy(2, 3));
-    SetDrawingMode(B_OP_COPY);
-    if (bitmap)
-        DrawBitmapFitted(this, bitmap, art);
-    else {
-        FillVerticalGradient(this, art, theme::kArtPlaceholderTop, theme::kArtPlaceholderBottom);
-        icons::DrawFitted(this, icons::kUser, art.InsetByCopy(art.Width() * 0.22f, art.Height() * 0.22f), theme::kArtPlaceholderNote);
-    }
-    SetHighColor(150, 150, 150);
-    StrokeRect(art);
+    DrawArtworkOnPage(this, bitmap, art, true, 7.0f, 3.0f);
     BFont big(be_bold_font);
     big.SetSize(18);
     SetFont(&big);
